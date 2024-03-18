@@ -1,2 +1,2 @@
 # DiDo
-(Interne) tooling die gebruikt word voor het verwerken van data van DGDOO Beleidsinformatie
+Verzameling applicaties voor het opzetten van een Operationele DataLaag (ODL) en het beheren van de tabellen erin. Aangeleverde data wordt per leverantie en leverancier opgeslagen. Uitgebreide data controles en renaming kunnen worden toegepast.
