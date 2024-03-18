@@ -1,0 +1,3 @@
+kolomnaam;datatype;domein;beschrijving
+kolom_1;bigint;NOT NULL;"Beschrijving van kolom 1 van {project_name}"
+kolom_2;integer;;"En dit is de tweede kolombeschrijving"

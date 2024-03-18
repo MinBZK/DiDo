@@ -1,0 +1,4 @@
+data_dictionary:
+      schema_source: {supplier_name}
+      column_name: # name of column containing the column names of the data table
+      data_dict: {data_dict_name}

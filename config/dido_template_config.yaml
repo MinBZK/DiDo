@@ -1,0 +1,105 @@
+# DiDo config.yaml example file
+PROJECT_NAME: {project_name}
+ROOT_DIR: {root_dir}
+WORK_DIR: {work_dir}
+
+VERBOSE: True
+
+# Example suppliers
+SUPPLIERS:
+  {supplier}:
+    # schema description for dido-create
+    {data_dict}
+    schema_file: {schema_filename}
+    prefix: # name of file to markdown description of the project
+    suffix: # ditto, but is used after the schema information
+
+SUPPLIERS_TO_PROCESS: [{supplier}]
+
+SERVER_CONFIGS:
+  # database credentials for ODL database.
+  # POSTGRES_USER and POSTGRES_PASSWORD will be extracted from
+  # .pgpass or .env in that order
+  # ODL_DATABASE should not be changed unless you know what you are doing
+  ODL_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: techniek
+    POSTGRES_SCHEMA: datamanagement
+
+  # database credentials for storing the data.
+  # POSTGRES_USER and POSTGRES_PASSWORD will be extracted from
+  # .pgpass or .env in that order
+  DATA_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: test_database
+    POSTGRES_SCHEMA: odl
+
+  # database credentials for xtracting the data.
+  # POSTGRES_USER and POSTGRES_PASSWORD will be extracted from
+  # .pgpass or .env in that order
+  # leave as it is until you really need it
+  FOREIGN_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: same_database_as_data_server_config
+    POSTGRES_SCHEMA: same_or_other_schema
+
+# select server to use as POSTGRES_HOST: development or production
+HOST: development
+
+# which columns to write for markdown tables and in which order
+COLUMNS:
+  - '*'
+
+{data_types}
+
+###########################################
+# !!! DON'T CHANGE STUF BELOW THIS LINE !!!
+# tables to be created
+TABLES:
+  schema:
+    table_root: attribuut_meta
+    template: yes
+    comment: <odl>
+    schema: <self>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''
+
+  meta:
+    table_root: bestand_meta
+    template: meta
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''
+
+  datakwaliteit_feit:
+    table_root: datakwaliteit_feit
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''
+
+  levering_feit:
+    table_root: levering_feit
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''

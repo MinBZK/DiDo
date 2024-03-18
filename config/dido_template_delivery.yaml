@@ -1,0 +1,49 @@
+# Example suppliers
+DELIVERIES:
+  {supplier}:
+    delivery_YYYY-{frequency}<integer>:
+      code-bronbestand: {code}
+      levering_leveringsdatum: YYYY-MM-DD
+      data_file: {project_name}
+      encoding: utf8
+      origin:
+        input: <file>
+
+# Define which headers to process
+SUPPLIERS_TO_PROCESS: [{supplier}]
+
+# if a table exists it's data is prepared for import yes/no
+# thereby overwriting existing files when yes
+ENFORCE_PREP_IF_TABLE_EXISTS: no
+ENFORCE_IMPORT_IF_TABLE_EXISTS: no
+
+# Specify whether all data files of a supplier do have headers or not
+HEADERS:
+  {supplier}: yes
+
+# Define a list of  columns from which to strip white space left and right for each cell
+# - [] empry list: nothing is being stripped
+# - ['*']: all columns are stripped
+# - ['a', 'b', 'd']: only spaces from columns 'a', 'b' and 'd' are stripped
+STRIP_SPACE:
+  {supplier}: ['*']
+
+# Rename data on column base
+# Some suppliers use 0 or 00000000 as missing data while 29991231 is used in
+# the datawarehouse. Also some suppliers deliver data with a minus(-) behind
+# the number instead before. An example on how to solve that can be found below.
+# Non-existing columns are skipped with a warning by dido_data_prep.py
+RENAME_DATA:
+  {supplier}:
+    pdirekt_example_date_column:    {{"re": True, "^00000000$":"29991231", "^0$": "29991231"}}
+    pdirekt_example_integer_column: {{"re": True, "(.*)-": "-\\1"}}
+    pdirekt_example_numeric_column: {{"re": True, "(.*)-": "-\\1"}}
+
+# Safety limitations
+LIMITS:
+  max_rows: 0 # number of rows to read from data: < 1 = read all rows
+  max_errors: 1_000 # stop reading data when exceeding this limit
+
+SNAPSHOTS:
+  zip: yes
+  destroy_todo: yes
