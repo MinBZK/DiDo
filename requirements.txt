@@ -2,6 +2,7 @@ mypy
 pylint
 PyYAML
 pandas
+psutil
 requests
 openpyxl
 python-dotenv
