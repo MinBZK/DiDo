@@ -1,0 +1,4 @@
+Met Laurens bespreken
+- Renamen d3g repository
+- de namen van de diverse servers
+- plaatsing van parameters en rapportageperiodes in het datamanagement schema

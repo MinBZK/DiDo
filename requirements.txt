@@ -1,0 +1,9 @@
+mypy
+pylint
+PyYAML
+pandas
+requests
+openpyxl
+python-dotenv
+psycopg2-binary
+sqlalchemy

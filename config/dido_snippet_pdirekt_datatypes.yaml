@@ -1,0 +1,11 @@
+# Conversion types for P-Direkt data types (SAP-HANA)
+DATATYPES:
+    CHAR: text
+    CUKY: text
+    UNIT: text
+    NUMC: integer
+    INT4: integer
+    DATS: date
+    QUAN: numeric
+    DEC:  numeric
+    CURR: numeric

@@ -1,0 +1,15 @@
+attribuut;waarde
+Code bronbestand;{code}
+Bronbestand beschrijving;DiDo {project_name}
+Bronbestand naamconventie;
+Bronbestand leverancier;{supplier_name}
+Bronbestand formaat;csv
+Bronbestand decimaal;{decimal}
+Bronbestand frequentielevering;{frequency}
+Bronbestand aantal attributen;2
+Bronbestand gemiddeld aantal records;1
+Bronbestand voorlooprecord;No
+Bronbestand sluitrecord;No
+Bronbestand datum begin;1970-01-01
+Bronbestand datum einde;2099-12-31
+Sysdatum;2023-06-04
