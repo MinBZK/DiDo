@@ -43,7 +43,7 @@
             "program": "${file}",
             "args": [
                 "-p",
-                "/data/arnoldreinders/projects/odl/salaris",
+                "/data/arnoldreinders/projects/odl/pdirekt/salaris",
                 "-d",
                 "delivery.yaml"
             ],
@@ -56,7 +56,7 @@
             "request": "launch",
             "program": "${file}",
             "args": [
-                "-p", "/data/arnoldreinders/projects/odl/ikb",
+                "-p", "/data/arnoldreinders/projects/odl/pdirekt/ikb",
                 "-d", "delivery.yaml"
             ],
             "console": "integratedTerminal",
@@ -69,7 +69,7 @@
             "program": "${file}",
             "args": [
                 "-p",
-                "/data/arnoldreinders/projects/odl/verzuim",
+                "/data/arnoldreinders/projects/odl/pdirekt/verzuim",
                 "-d", "delivery.yaml"
             ],
             "console": "integratedTerminal",

@@ -1,11 +1,12 @@
+"""
+Kills all tables and their contents from one, sp[ecific supplier of a project.
+
+Lists all suppliers and promps the user for the name to erase.
+"""
+
 import os
-import re
 import sys
-import json
 import time
-import locale
-import logging
-from datetime import datetime
 import numpy as np
 import pandas as pd
 import sqlalchemy

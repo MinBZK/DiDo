@@ -290,14 +290,11 @@ def load_separate_header_file(supplier_config: dict,
     header_columns = [dc.change_column_name(x)
                       for x in headers['FIELDNAME']]
 
-    print(schema_columns)
-    print(header_columns)
-
-    print(f'lengths: schema {len(schema_columns)}, headers {len(header_columns)}')
+    Logger.info(f'lengths: schema {len(schema_columns)}, headers {len(header_columns)}')
     print('Header columns not in datadictionary:')
     for col in header_columns:
         if col not in schema_columns:
-            print(col)
+            logger.inf(col)
 
     print('Data dictionary columns not in headers:')
     for col in schema_columns:
@@ -821,6 +818,7 @@ def prepare_one_delivery(cargo: dict,
             server_config = db_servers['ODL_SERVER_CONFIG'],
             encoding = encoding,
         )
+        ### AANPASSEN MET HEADER FILE
         # create a deepcopy of renames as it will be modified inside process_data
         rename_copy = copy.deepcopy(renames)
         if data is not None:
