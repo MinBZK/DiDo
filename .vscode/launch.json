@@ -13,6 +13,16 @@
             "justMyCode": true
         },
         {
+            "name": "Python: Test",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "args": ["-p", "/data/arnoldreinders/apps/dido/project_test",
+                     "-d", "delivery.yaml"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
             "name": "Shuttel",
             "type": "python",
             "request": "launch",

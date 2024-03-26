@@ -1,0 +1,1 @@
+De struktuur voor de nieuwe IKB data (sinds yyyy-mm-dd).

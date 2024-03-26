@@ -1,0 +1,71 @@
+DELIVERIES:
+  pdirekt:
+    delivery_2023-Q2:
+      code_bronbestand: PDIREKT_SALARIS
+      levering_leveringsdatum: 2024-02-29
+      data_file: s3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie/salaris/20240229_ZBIOSAL01_Salaris_editie_20230630.CSV
+      data_check: yes
+      origin:
+        input: <file>
+
+    delivery_2023-Q3:
+      code_bronbestand: PDIREKT_SALARIS
+      levering_leveringsdatum: 2024-02-29
+      data_file: s3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie/salaris/20240229_ZBIOSAL01_Salaris_editie_20230930.CSV
+      data_check: yes
+      origin:
+        input: <file>
+
+    delivery_2023-Q4:
+      code_bronbestand: PDIREKT_SALARIS
+      levering_leveringsdatum: 2024-02-29
+      data_file: s3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie/salaris/20240229_ZBIOSAL01_Salaris_editie_20231231.CSV
+      data_check: yes
+      origin:
+        input: <file>
+
+SUPPLIERS_TO_PROCESS: ['*']
+
+# if a table exists it's data is prepared for import yes/no
+# thereby overwriting existing files when yes
+ENFORCE_PREP_IF_TABLE_EXISTS: yes
+ENFORCE_IMPORT_IF_TABLE_EXISTS: yes
+
+# Indicate whether delivery contains header row or not
+HEADERS:
+  pdirekt: no
+
+# Definieer de kolommen waarvan de de spaties links en rechts moeten worden gestript
+# voor iedere cel. Geef kolommen op als lijst:
+#  - [] lege lijst: niets wordt gestript
+#  - ['*']: alle kolommen worden gestript
+#  - ['a', 'b', 'd']: van kolommen a, b, d worden de spaties links en rechts gestript
+STRIP_SPACE:
+  pdirekt: ['*']
+
+# Rename data on column base
+# Conversies voor ikb_jopi: ontbrekende datums worden aangegeven door 0(0000000)
+# In DWH is de conventie 29991231
+# Niet nodig voor vertaaltabel
+RENAME_DATA:
+  pdirekt:
+    kalenderdag:             {"re": True, "^00000000$":"29991231", "^0$": "29991231"}
+    pds_datum_ambtsjubileum: {"re": True, "^00000000$":"29991231", "^0$": "29991231"}
+    datum_uit_dienst:        {"re": True, "^00000000$":"29991231", "^0$": "29991231"}
+    deeltijdfactor_in:       {"re": True, "(.*)-": "-\\1"}
+    leeftijd_in_jaren:       {"re": True, "(.*)-": "-\\1"}
+    functie:                 {"re": True, "(.*)-": "-\\1"}
+    bedrag:                  {"re": True, "(.*)-": "-\\1"}
+    aantal:                  {"re": True, "(.*)-": "-\\1"}
+
+### Parameters for dido-import
+# LIMITATIONS faciliteert het instellen van limieten zodat getest kan worden op
+# een beperkte hoeveelheid data of dat afgebroken wordt als er teveel fouten zijn gedetekteerd
+LIMITS:
+  max_rows: 0 # <1 = read all rows
+  max_errors: 1000
+
+SNAPSHOTS:
+  zip: yes
+  destroy_todo: yes
+

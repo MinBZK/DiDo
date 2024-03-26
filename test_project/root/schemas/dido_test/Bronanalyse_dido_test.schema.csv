@@ -1,0 +1,11 @@
+kolomnaam;leverancier_kolomnaam;leverancier_kolomtype;datatype;keytype;constraints;domein;verstek;avg_classificatie;veiligheid_classificatie;beschrijving
+test_id;/TEST/ID;NUMC;;;;;;1;1;SerialId
+col_boolean;/COL/BOOLEAN;CHAR;text;;;['','true','false'];;1;1;Check Boolean Type
+col_integer;/COL/INTEGER;NUMC;numeric;;;1:100;;1;1;Check Integer Type
+col_decimal;/COL/DECIMAL;NUMC;numeric;;;;;1;1;Check Decimal Type
+col_date;/COL/DATE;DATS;date;;;;;1;1;Check Date Type
+check_null;/CHECK/NULL;CHAR;;;NOT NULL;;;1;1;Check Null 
+check_minmax;CHECK/MINMAX;NUMC;numeric;;;[1:7];;1;1;Check Min Max
+check_list_numeric;CHECK/LIST/NUMERIC;NUMC;numeric;;;[3,5,7,9];;1;1;Check List Numeric values
+check_list_text;CHECK/LIST/TEXT;CHAR;text;;;['ABC','DEF','XYZ','KLM','ASML',];;1;1;Check List Text values
+check_re;/CHECK/RE;CHAR;text;;;;;2;2;Check Regular Expression
