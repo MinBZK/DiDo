@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "DiDo: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
             "name": "Shuttel",
             "type": "python",
             "request": "launch",
@@ -17,10 +25,41 @@
             "justMyCode": true
         },
         {
-            "name": "DiDo: Current File",
+            "name": "DiDo: Salaris",
             "type": "python",
             "request": "launch",
             "program": "${file}",
+            "args": [
+                "-p",
+                "/data/arnoldreinders/projects/odl/pdirekt/salaris",
+                "-d",
+                "delivery.yaml"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "DiDo: IKB",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "args": [
+                "-p", "/data/arnoldreinders/projects/odl/pdirekt/ikb",
+                "-d", "delivery.yaml"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "DiDo: Verzuim",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "args": [
+                "-p",
+                "/data/arnoldreinders/projects/odl/pdirekt/verzuim",
+                "-d", "delivery.yaml"
+            ],
             "console": "integratedTerminal",
             "justMyCode": true
         },
@@ -37,46 +76,7 @@
             "justMyCode": true
         },
         {
-            "name": "DiDo: Salaris",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "args": [
-                "-p",
-                "/data/arnoldreinders/projects/odl/salaris",
-                "-d",
-                "delivery.yaml"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "DiDo: IKB",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "args": [
-                "-p", "/data/arnoldreinders/projects/odl/ikb",
-                "-d", "delivery.yaml"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "DiDo: Verzuim",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "args": [
-                "-p",
-                "/data/arnoldreinders/projects/odl/verzuim",
-                "-d", "delivery.yaml"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "DiDo: Compare",
+            "name": "DiDo: Postcode Compare",
             "type": "python",
             "request": "launch",
             "program": "${file}",
@@ -92,21 +92,6 @@
                 "-c",
                 "compare",
                 "-v",
-                // "--Yes"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "DiDo: Kill Supplier",
-            "type": "python",
-            "request": "launch",
-            "program": "src/dido_kill_supplier.py",
-            "args": [
-                "-p",
-                "/data/arnoldreinders/projects/ruimte/postcodes",
-                "-s",
-                "mutations",
                 // "--Yes"
             ],
             "console": "integratedTerminal",
