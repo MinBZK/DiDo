@@ -1,0 +1,13 @@
+# bootstrap file to provide the program with necessary information
+# this file is developers only
+
+ALLOWED_POSTGRES_TYPES: integer, bigint, serial, bigserial, real, numeric, text, boolean, date, timestamp
+REAL_TYPE: real, double precision, numeric, decimal
+
+# Subdirs within the working directory.
+WORKDIR_STRUCTURE: docs,sql,schemas,todo,done
+
+ODL_VERSION: 0.7.1
+SERVERS:
+  DEVELOPMENT: 10.10.12.12
+  PRODUCTION: 10.10.12.6
