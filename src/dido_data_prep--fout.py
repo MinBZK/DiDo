@@ -7,6 +7,7 @@ import gc
 import csv
 import time
 import copy
+import logging
 import numpy as np
 import pandas as pd
 
@@ -21,10 +22,6 @@ import dido_common as dc
 import simple_table as st
 
 from dido_common import DiDoError
-
-# pylint: disable=bare-except, line-too-long, consider-using-enumerate
-
-# pylint: disable=logging-fstring-interpolation, too-many-locals
 
 # print all columns of dataframe
 pd.set_option('display.max_columns', None)
@@ -174,7 +171,6 @@ def check_kolom(data: pd.DataFrame, schema: pd.DataFrame, kolom: str):
 ### check_kolom ###
 
 
-'''
 def test_for_headers(supplier_config: dict,
                      filename: str,
                      schema: pd.DataFrame,
@@ -244,7 +240,7 @@ def test_for_headers(supplier_config: dict,
     return headers_present
 
 ### test_for_headers ###
-'''
+
 
 def get_bootstrap_data_headers(server_config: dict):
     # Read bootstrap data
@@ -253,7 +249,7 @@ def get_bootstrap_data_headers(server_config: dict):
 
     return columns
 
-### get_bootstrap_data_headers ###
+### test_for_headers ###
 
 
 def load_separate_header_file(supplier_config: dict,
@@ -266,7 +262,6 @@ def load_separate_header_file(supplier_config: dict,
     _, fn, ext = dc.split_filename(data_dicts[supplier]['header_file'])
     filename = os.path.join(data_dicts[supplier]['path'], fn + ext)
 
-    logger.info('')
     logger.info(f'Reading header file {fn} , encoding: {encoding}')
 
     # fetch the header file
@@ -290,49 +285,23 @@ def load_separate_header_file(supplier_config: dict,
         encoding = encoding,
     )
 
-    # compare columns from header file with schema columns
-    # remove meta columns from schema
+    # Convert colmn names to Postgres standard names
     schema_columns = schema['kolomnaam'].tolist()[6:]
-
-    # Convert column names to Postgres standard names for header
     header_columns = [dc.change_column_name(x)
                       for x in headers['FIELDNAME']]
 
-    # now they should be of equal length
-    errors = False
-    logger.debug(f'lengths: schema {len(schema_columns)}, headers {len(header_columns)}')
+    Logger.info(f'lengths: schema {len(schema_columns)}, headers {len(header_columns)}')
+    print('Header columns not in datadictionary:')
+    for col in header_columns:
+        if col not in schema_columns:
+            logger.inf(col)
 
-    # if not, examine what's wrong
-    if len(schema_columns) != len(header_columns):
-        errors = True
-        logger.info('Header columns not in datadictionary:')
-        for col in header_columns:
-            if col not in schema_columns:
-                logger.info(col)
+    print('Data dictionary columns not in headers:')
+    for col in schema_columns:
+        if col not in header_columns:
+            print(col)
 
-        logger.info('Data dictionary columns not in headers:')
-        for col in schema_columns:
-            if col not in header_columns:
-                logger.info(col)
-
-    # if lengths are equal, column names should be as well
-    else:
-        for i in range(len(header_columns)):
-            if schema_columns[i] != header_columns[i]:
-                errors = True
-                logger.error(f'*** schema column name, {schema_columns.iloc[i]}, '
-                             f'not equal to header column name: {header_columns.iloc[i]}')
-            # if
-        # for
-    # if
-
-    if errors:
-        raise DiDoError('*** Columns from header document not equal those of schema')
-
-    # at this point we are sure that the header file contains the same number of headers
-    # in the same order with the same names as provided in the schema
-
-    return schema_columns
+    return
 
 ### load_separate_header_file ###
 
@@ -357,7 +326,7 @@ def load_data(supplier_config: dict,
     data_dicts = dc.get_par(supplier_config, 'data_description')
 
     # get the delivery_type, if omitted use mode: insert as default
-    # delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
+    delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
 
     cpu = time.time()
     _, fn, _ = dc.split_filename(data_dicts[supplier]['data_file'])
@@ -388,30 +357,13 @@ def load_data(supplier_config: dict,
     # set delimiter when present
     delimiter = dc.get_par(supplier_config, 'delimiter', ';')
 
-    # check if HEADERS is specified for this supplier
-    headers_present = False
+    # find out if the file contains headers
     if supplier in headers.keys():
         headers_present = headers[supplier]
 
-    # find out if the file contains headers or if a header sheet is provided
-    header_result = None
+    else:
+        headers_present = False
 
-    # check for header sheet
-    if 'header_file' in supplier_config.keys():
-        # a header sheet is provided
-
-        _, fn, ext = dc.split_filename(data_dicts[supplier]['header_file'])
-        header_result = load_separate_header_file(
-            supplier_config = supplier_config,
-            supplier = supplier,
-            schema = schema,
-            encoding = encoding,
-        )
-
-        if headers_present:
-            logger.warning('!!! You specify that headers are present and a header file')
-            logger.warning('!!! The header file rules, but are you sure you know what you are doing?')
-        # if
     # if
 
     logger.info ('')
@@ -447,9 +399,6 @@ def load_data(supplier_config: dict,
 
     # if
 
-    if header_result is not None:
-        data.columns = header_result
-
     ram = data.memory_usage(index=True).sum()
     cpu = time.time() - cpu
 
@@ -476,6 +425,7 @@ def process_data(data: pd.DataFrame,
     dc.report_ram('Memory use at process_data')
     logger.info('')
 
+    print(strip_space.keys())
     # strip space left and right
     if strip_space is not None and supplier in strip_space.keys():
         cpu = time.time()
@@ -489,6 +439,8 @@ def process_data(data: pd.DataFrame,
         logger.info('[Stripping white space]')
 
         # strip white space from designated columns
+        #data.columns = [col.lower().strip() for col in data.columns]
+        #print(data.columns)
         for col in strip_cols:
             if col in data.columns:
                 pg_col = dc.change_column_name(col)
@@ -760,7 +712,7 @@ def get_list_of_deliveries(origin: dict,
     already_delivered = get_db_already_delivered(table_name, server_config)
     cached_deliveries = get_cached_deliveries(cache_dir)
 
-    return already_delivered
+    return
 
 ### get_list_of_deliveries ###
 
@@ -811,7 +763,6 @@ def prepare_one_delivery(cargo: dict,
         return
 
     elif origin['input'] == '<api>':
-        # TODO: this code probably does not work
         logger.info(f'Inlezen via API van {origin["source"]}')
         table_names = dc.get_table_names(project_name, leverancier_id)
         cache_dir = os.path.join(root_dir, 'data', leverancier_id)
@@ -848,6 +799,16 @@ def prepare_one_delivery(cargo: dict,
 
         dc.report_ram('[Memory use before loading data]')
 
+        # check for header file
+        if 'header_file' in cargo.keys():
+            result = load_separate_header_file(
+                supplier_config = cargo,
+                supplier = leverancier_id,
+                schema = leverancier_schema,
+                encoding = encoding,
+            )
+        # if
+
         data = load_data(
             supplier_config = cargo,
             supplier = leverancier_id,
@@ -857,29 +818,36 @@ def prepare_one_delivery(cargo: dict,
             server_config = db_servers['ODL_SERVER_CONFIG'],
             encoding = encoding,
         )
-
+        ### AANPASSEN MET HEADER FILE
         # create a deepcopy of renames as it will be modified inside process_data
         rename_copy = copy.deepcopy(renames)
-        data = process_data(
-            data = data,
-            supplier = leverancier_id,
-            schema = leverancier_schema,
-            meta = leverancier_metadata,
-            renames = rename_copy,
-            real_types = real_types,
-            strip_space = strip_space,
-        )
+        if data is not None:
+            data = process_data(
+                data = data,
+                supplier = leverancier_id,
+                schema = leverancier_schema,
+                meta = leverancier_metadata,
+                renames = rename_copy,
+                real_types = real_types,
+                strip_space = strip_space,
+            )
 
-        save_data(
-            data = data,
-            data_dirs = cargo['data_description'],
-            supplier = leverancier_id,
-            working_directory = work_dir,
-        )
+            save_data(
+                data = data,
+                data_dirs = cargo['data_description'],
+                supplier = leverancier_id,
+                working_directory = work_dir,
+            )
 
-        data = None
-        gc.collect()
-        dc.report_ram('End of prepare_one_delivery')
+            data = None
+            gc.collect()
+            dc.report_ram('End of prepare_one_delivery')
+
+        else:
+            ok = False
+            logger.warning(f'!!! No datafile processed for {leverancier_id}')
+
+        # if
 
     # if
 
@@ -899,35 +867,37 @@ def dido_data_prep(header: str):
     # read the configuration file
     config_dict = dc.read_config(args.project)
     delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], args.delivery)
+    # x = delivery_config['RENAME_DATA']['pdirekt']['pds_datum_ambtsjubileum']
+    # print(x)
 
     # get project environment
     project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    # columns_to_write = config_dict['COLUMNS']
-    # table_desc = config_dict['TABLES']
-    # report_periods = config_dict['REPORT_PERIODS']
+    columns_to_write = config_dict['COLUMNS']
+    table_desc = config_dict['TABLES']
+    report_periods = config_dict['REPORT_PERIODS']
 
-    # renames = dc.get_par(delivery_config, 'RENAME_DATA', None)
-    # strip_space = dc.get_par(delivery_config, 'STRIP_SPACE', None)
-    # headers = dc.get_par(delivery_config, 'HEADERS', {})
+    renames = dc.get_par(delivery_config, 'RENAME_DATA', None)
+    strip_space = dc.get_par(delivery_config, 'STRIP_SPACE', None)
+    headers = dc.get_par(delivery_config, 'HEADERS', {})
     overwrite = dc.get_par(delivery_config, 'ENFORCE_PREP_IF_TABLE_EXISTS', False)
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
-    # odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    # data_server_config = db_servers['DATA_SERVER_CONFIG']
-    # foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
+    odl_server_config = db_servers['ODL_SERVER_CONFIG']
+    data_server_config = db_servers['DATA_SERVER_CONFIG']
+    foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
-    # sql_filename = os.path.join(work_dir, 'sql', 'create-tables.sql')
-    # doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
+    sql_filename = os.path.join(work_dir, 'sql', 'create-tables.sql')
+    doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
 
     # select which suppliers to process
     suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
 
     # get real_types
-    # allowed_datatypes, sub_types = dc.create_data_types()
+    allowed_datatypes, sub_types = dc.create_data_types()
     real_types = sub_types['real']
 
     # just * means process all
@@ -1012,27 +982,7 @@ if __name__ == '__main__':
     cli, args = dc.read_cli()
 
     # create logger in project directory
-    try:
-        log_file = os.path.join(args.project, 'logs/' + cli['name'] + '.log')
-
-    except:
-        appname = cli['name'] + cli['ext']
-        print(f'*** No log file found in project directory for {appname}')
-        print('')
-        if args.project is None:
-            print('You specified no project directory')
-            print('Are you sure you specified the --project <path/to/project> parameter?')
-
-        else:
-            print('Probabbly there is no logs directory in the project map')
-            print('You also might have specified the wrong project directory')
-
-        # if
-
-        sys.exit(1)
-
-    # try..except
-
+    log_file = os.path.join(args.project, 'logs/' + cli['name'] + '.log')
     logger = dc.create_log(log_file, level = 'DEBUG')
 
     # go

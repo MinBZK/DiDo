@@ -162,11 +162,11 @@ def create_log(filename: str, level: int = logging.INFO, reset: bool = True) -> 
         },
     }
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    log = logging.getLogger()
+    log.setLevel(logging.DEBUG)
     dictConfig(logging_configuration)
 
-    return logger
+    return log
 
 ### create_log ###
 

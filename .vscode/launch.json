@@ -31,7 +31,7 @@
             "program": "${file}",
             "args": [
                 "-p",
-                "/data/arnoldreinders/projects/odl/pdirekt/salaris",
+                "/data/arnoldreinders/projects/odl/pdirekt/pdirekt/salaris",
                 "-d",
                 "delivery.yaml"
             ],
