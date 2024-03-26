@@ -168,11 +168,15 @@ def create_log(filename: str, level: int = logging.INFO, reset: bool = True) -> 
 
     return log
 
+### create_log ###
+
 
 def iso_cet_date(datum: datetime, tz: str = ''):
     result = datum.strftime(f"%Y-%m-%d %H:%M:%S {tz}")
 
     return result
+
+### iso_cet_date ###
 
 
 def split_filename(filename: str) -> tuple:

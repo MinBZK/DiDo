@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "DiDo: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
             "name": "Shuttel",
             "type": "python",
             "request": "launch",
@@ -17,33 +25,13 @@
             "justMyCode": true
         },
         {
-            "name": "DiDo: Current File",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "DiDo: Postcodes",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "args": [
-                "-p",
-                "/data/arnoldreinders/projects/ruimte/postcodes"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
             "name": "DiDo: Salaris",
             "type": "python",
             "request": "launch",
             "program": "${file}",
             "args": [
                 "-p",
-                "/data/arnoldreinders/projects/odl/pdirekt/salaris",
+                "/data/arnoldreinders/projects/odl/pdirekt/pdirekt/salaris",
                 "-d",
                 "delivery.yaml"
             ],
@@ -76,7 +64,19 @@
             "justMyCode": true
         },
         {
-            "name": "DiDo: Compare",
+            "name": "DiDo: Postcodes",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "args": [
+                "-p",
+                "/data/arnoldreinders/projects/ruimte/postcodes"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "DiDo: Postcode Compare",
             "type": "python",
             "request": "launch",
             "program": "${file}",
@@ -92,21 +92,6 @@
                 "-c",
                 "compare",
                 "-v",
-                // "--Yes"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "DiDo: Kill Supplier",
-            "type": "python",
-            "request": "launch",
-            "program": "src/dido_kill_supplier.py",
-            "args": [
-                "-p",
-                "/data/arnoldreinders/projects/ruimte/postcodes",
-                "-s",
-                "mutations",
                 // "--Yes"
             ],
             "console": "integratedTerminal",
