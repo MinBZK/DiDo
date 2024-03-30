@@ -39,29 +39,32 @@ def get_info(table_name: str, tables_name: dict, server_config: dict):
            }
 
     try:
-        result = st.sql_select(table_name = table_name,
-                                        columns = 'count(*)',
-                                        verbose = False,
-                                        sql_server_config = server_config
-                                        )
+        result = st.sql_select(
+            table_name = table_name,
+            columns = 'count(*)',
+            verbose = False,
+            sql_server_config = server_config
+        )
 
         info['records'] = result.iloc[0].loc['count']
         if table_name == tables_name[dc.TAG_TABLE_SCHEMA]:
-            result = st.sql_select(table_name = table_name,
-                                            columns = 'DISTINCT levering_rapportageperiode, count(*)',
-                                            where = 'group by levering_rapportageperiode order by levering_rapportageperiode',
-                                            verbose = False,
-                                            sql_server_config = server_config
-                                            )
+            result = st.sql_select(
+                table_name = table_name,
+                columns = 'DISTINCT levering_rapportageperiode, count(*)',
+                where = 'group by levering_rapportageperiode order by levering_rapportageperiode',
+                verbose = False,
+                sql_server_config = server_config
+            )
             if len(result) > 0:
                 info['deliveries'] = result
 
         elif table_name == tables_name[dc.TAG_TABLE_DELIVERY]:
-            result = st.sql_select(table_name = table_name,
-                                            columns = 'DISTINCT levering_rapportageperiode',
-                                            verbose = False,
-                                            sql_server_config = server_config
-                                            )
+            result = st.sql_select(
+                table_name = table_name,
+                columns = 'DISTINCT levering_rapportageperiode',
+                verbose = False,
+                sql_server_config = server_config
+            )
 
     except sqlalchemy.exc.ProgrammingError:
         info['table'] = '*** Tabel bestaat niet ***'

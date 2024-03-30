@@ -130,7 +130,6 @@ def check_type(data: pd.DataFrame,
     Returns:
         pd.DataFrame, int: see description of the parameters
     """
-    may_be_null: bool = 'NOT NULL' not in schema.loc[column, 'constraints']
     col_index = data.columns.get_loc(column)
 
     result = data[column].str.match(check_function)
@@ -139,8 +138,14 @@ def check_type(data: pd.DataFrame,
         logger.debug(f'{len(result) - result.sum()} errors found in column {column}, type {data_type}')
 
         idx = result[~result].index
-        total_errors += len(idx)
+        n_errors = 0
         for row in idx:
+            # if total number of errors exceeds the maximum allowed, break the loop
+            if total_errors + n_errors > max_errors:
+                break
+
+            n_errors += 1
+
             value = data.iloc[row].loc[column]
             report = add_error(
                 report = report,
@@ -151,6 +156,7 @@ def check_type(data: pd.DataFrame,
                 explain = f'Datatype not {data_type}, value found is "{value}"'
             )
         # for
+        total_errors += len(idx)
     # if
 
     if total_errors > max_errors:
@@ -173,6 +179,7 @@ def check_data_types(data: pd.DataFrame,
     logger.info('Data type check')
 
     for col in data.columns:
+        check = ''
         n_errors = total_errors
         data_type = schema.loc[col, 'datatype'].lower().strip()
         typ = str(data[col].dtype)
@@ -189,6 +196,7 @@ def check_data_types(data: pd.DataFrame,
 
             else:
                 check = data_types[data_type]
+
                 report, total_errors = check_type(
                     data = data,
                     schema = schema,
@@ -207,11 +215,15 @@ def check_data_types(data: pd.DataFrame,
                     result = f': {n_errors} errors'
 
             # if
+
         else:
             result = ': ok'
 
         # if
+
         logger.info(f'  Data type check "{data_type}" for column {col}{result}')
+        if len(check) > 0:
+            logger.debug(f'    Tested for: {check}')
 
     # for
 
@@ -240,7 +252,7 @@ def check_domain_list(data: pd.DataFrame,
     col_index = data.columns.get_loc(column)
 
     for row in range(len(data)):
-        # test if an error was already reported, further checks are not very userful
+        # test if an error was already reported, further checks are not very useful
         if report.iloc[row][column] != 0:
             continue
 
@@ -301,7 +313,7 @@ def check_domain_minmax(
         min_val, max_val = float(mins), float(maxs)
 
     for row in range(len(data)):
-        # test if an error was already reported, further checks are not very userful
+        # test if an error was already reported, further checks are not very useful
         # if report.iloc[row][column] != 0:
         #     continue
 
@@ -412,7 +424,7 @@ def check_domain_re(data: pd.DataFrame,
     pattern = re.compile(domain.strip())
     col_index = data.columns.get_loc(column)
     for row in range(len(data)):
-        # test if an error was already reported, further checks are not very userful
+        # test if an error was already reported, further checks are not very useful
         # if report.iloc[row][column] != 0:
         #     continue
 
@@ -748,7 +760,7 @@ def create_supply_sql(pakbon_record: pd.DataFrame,
         for col in pakbon_record.columns:
             if col in schema_cols:
                 data_type = schema.loc[col, 'datatype']
-                if data_type =='text':
+                if data_type =='text' and col != dc.COL_CREATED_BY:
                     row_values += f'$${str(pakbon_record.loc[idx, col])}$$, '
 
                 elif data_type =='date' or data_type =='timestamp':
@@ -787,6 +799,8 @@ def create_supply_sql(pakbon_record: pd.DataFrame,
         counter += 1
 
     sql = sql [:-2] + ';\n\n'
+
+    # print(sql)
 
     return sql
 
@@ -1603,6 +1617,7 @@ def prepare_delivery_note(meta_data: pd.DataFrame,
     pakbon = {}
     pakbon[dc.ODL_LEVERING_FREK] = supplier_config[dc.ODL_LEVERING_FREK]
     pakbon[dc.ODL_CODE_BRONBESTAND] = supplier_config[dc.ODL_CODE_BRONBESTAND]
+    pakbon[dc.COL_CREATED_BY] = 'current_user'
     pakbon['levering_leveringsdatum'] = supplier_config['levering_leveringsdatum']
     pakbon['levering_rapportageperiode_volgnummer'] = top
     pakbon['levering_goed_voor_verwerking'] = True

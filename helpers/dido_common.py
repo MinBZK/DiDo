@@ -50,6 +50,9 @@ ODL_DATUM_BEGIN      = 'record_datum_begin'
 ODL_DATUM_EINDE      = 'record_datum_einde'
 ODL_SYSDATUM         = 'sysdatum'
 
+# special column names that require action
+COL_CREATED_BY = 'created_by'
+
 # 1,2,3,6,8 controls in code
 # betekenis van datakwaliteitcodes
 VALUE_OK = 0 # "Valide waarde"
@@ -565,7 +568,7 @@ def read_config(project_dir: str) -> dict:
     servers = config['SERVER_CONFIGS'].keys()
 
     # check if the server to use exists
-    host = config['HOST'].upper().strip()
+    host = config['HOST'].lower().strip()
     if host not in parameters['SERVERS'].keys():
         for server in parameters.keys():
             logger.info(f' - {server}')
