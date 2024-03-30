@@ -313,6 +313,7 @@ def apply_meta_odl(meta: pd.DataFrame,
     errors = False
 
     template = dc.load_odl_table(dc.META_TEMPLATE, server_config)
+    # print(template)
 
     # change meta row index values
     meta.index = [dc.change_column_name(i) for i in meta.index.tolist()]
@@ -333,90 +334,7 @@ def apply_meta_odl(meta: pd.DataFrame,
         logger.error(errmsg)
         errors = True
 
-    if len(meta.loc['bronbestand_beschrijving', 'waarde'].strip()) == 0:
-        errmsg = f'* Meta-attribuut "bronbestand_beschrijving" in "{filename}" ontbreekt of is '
-        errmsg += 'niet gespecificeerd. '
-        errmsg += 'Bestanden met ontbrekende beschrijvingen worden niet geaccepteerd.'
-        logger.error(errmsg)
-        errors = True
-
-    # Check for some rows if an integer is provided: if not assume 1
-    int_rows = ['bronbestand_gemiddeld_aantal_records', 'bronbestand_aantal_attributen']
-    for int_row in int_rows:
-        if int_row in meta.index:
-            result = meta.loc[int_row, 'waarde']
-            if not result.isnumeric():
-                result = 1
-
-        else:
-            result = 1
-
-        meta.loc[int_row, 'waarde'] = result
-
-    decimal = meta.loc['bronbestand_decimaal', 'waarde'].strip()
-    if decimal not in ['.', ',']:
-        errmsg = f'! Het Meta-attribuut "bronbestand_decimaal" in "{filename}" ontbreekt of is niet'
-        errmsg += ' correct gespecificeerd. Dit moet "." of "," zijn; "." wordt aangenomen.'
-        logger.warning(errmsg)
-        meta.loc['bronbestand_decimaal', 'waarde'] = '.'
-
-    if 'bronbestand_expiratie_datum' not in meta.index or \
-       len(meta.loc['bronbestand_expiratie_datum', 'waarde'].strip()) == 0:
-        meta.loc['bronbestand_expiratie_datum', 'waarde'] = bootstrap_data['END_OF_WORLD']
-
-    if errors:
-        raise DiDoError(f'Fout in "{filename}", file aanpassen en opnieuw inleveren.')
-
-    meta.loc['bronbestand_aantal_attributen', 'waarde'] = str(n_cols)
-    meta.loc['sysdatum', 'waarde'] = dc.iso_cet_date(datetime.now())
-
-    logger.debug(f'Meta info after having been interpreted:\n{meta}')
-
-    return meta
-
-### apply_meta_odl ###
-
-
-def apply_meta_odl_old(template: pd.DataFrame,
-                   meta: pd.DataFrame,
-                   n_cols: int,
-                   filename: str,
-                   bootstrap_data: dict,
-                  ) -> pd.DataFrame:
-    """ Checks meta information
-
-    Args:
-        template -- meta tremplate file from ODL
-        meta -- meta information as supplied by user
-        n_cols -- number of columns in the data
-        filename -- filename to be mentioned in error reporting
-
-    Raises:
-        DiDoError: when an error occurs raise this exception
-
-    Returns:
-        modified meta file
-    """
-    errors = False
-
-    # change meta row index values
-    meta.index = [dc.change_column_name(i) for i in meta.index.tolist()]
-
-    # test if name occurs in template column list
-    for col_name in meta.index.tolist():
-        if col_name not in template['kolomnaam'].tolist():
-            logger.error(f'* Naam {col_name} geen metadata kolom')
-            errors = True
-
-    meta = meta.reset_index()
-    meta.columns = ['attribuut', 'waarde']
-    meta = meta.set_index('attribuut')
-
-    if len(meta.loc[f'{dc.ODL_CODE_BRONBESTAND}', 'waarde'].strip()) == 0:
-        errmsg = f'* Meta-attribuut "code_bronbestand" in "{filename}" ontbreekt of is niet '
-        errmsg += 'gespecificeerd. Vraag dit aan bij Team DWH.'
-        logger.error(errmsg)
-        errors = True
+    meta.loc['created_by', 'waarde'] = 'current_user'
 
     if len(meta.loc['bronbestand_beschrijving', 'waarde'].strip()) == 0:
         errmsg = f'* Meta-attribuut "bronbestand_beschrijving" in "{filename}" ontbreekt of is '
@@ -1148,7 +1066,8 @@ def create_table_input(data: pd.DataFrame = None,
             for col in data.columns:
                 data_type = schema.loc[idx, 'datatype']
 
-                if isinstance(data_type, str):
+                # when string, surround value by $$, except when kolomnaam == 'created_by'
+                if isinstance(data_type, str) and col != 'created_by':
                     row_values += f'$${str(data.loc[idx, col])}$$, '
                 else:
                     row_values += f'{str(data.loc[idx, col])}, '

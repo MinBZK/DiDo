@@ -4,6 +4,7 @@ Prepares data for import into an SQL database.
 
 import os
 import gc
+import sys
 import csv
 import time
 import copy
@@ -564,33 +565,61 @@ def process_data(data: pd.DataFrame,
             logger.info('')
             logger.info('[Renaming data in columns]')
 
-            # iterate over columns to rename
-            rename_cols = list(cols.keys())
-            todo_cols = []
+            # Initialize variables used in iteration
+            rename_dict = {}
+            todo_cols = list(cols.keys())
+            rename_cols = []
 
+            logger.info('[Solving datatypes]')
             # Translate generic data types into corresponding columns
-            for col in rename_cols:
+            for col in todo_cols:
                 new_col = col.strip()
                 if len(new_col) > 1:
+                    # test if column name is <datatype>
                     if new_col[0] == '<' and new_col[-1] == '>':
-                        new_col = new_col[1:-2]
+                        new_col = new_col[1:-1]
+
+                        # collect all columns with that datatype
+                        logger.info('')
+                        logger.info(f'[Columns ascribed to datatype {col}]')
                         datatypes_found = schema[schema['datatype'] == new_col]
-                        for idx, row in datatypes_found.iterrows():
-                            datatyp = row['datatype']
-                            if datatyp not in rename_cols:
-                                rename_cols.append(datatyp)
+                        if len(datatypes_found) == 0:
+                            logger.warning(f'!!! None found')
+
+                        # The index of iterrows is kolomnaam
+                        for col_name, row in datatypes_found.iterrows():
+                            # add all columns with this datatype and with the rename
+                            # value to the rename_dict dictionary instead of the
+                            # <datatype> specification
+                            if col_name not in rename_cols and col_name in data.columns:
+                                seq += 1
+                                logger.info(f'{seq:4d}. {col_name}')
+                                rename_dict[col_name] = cols[col]
 
                             # if
                         # for
+
+                    else:
+                        # "normal" column, add to dictionary
+                        rename_dict[col_name] = cols[col]
+
                     # if
+
+                else:
+                    # "normal" column, add to dictionary
+                    rename_dict[col_name] = cols[col]
+
                 # if
             # for
 
-            for col in rename_cols:
+            logger.info('')
+            logger.info('[Renaming]')
+            seq = 0
+            for col, rename_values in rename_dict.items():
                 # if exists: rename data
                 if col in data.columns:
                     if schema.loc[col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
-                        rename_values = cols[col]
+                        # rename_values = rename_dict[col]
                         regex = False
                         if 're' in rename_values.keys():
                             regex = rename_values['re']
@@ -927,7 +956,7 @@ def dido_data_prep(header: str):
     suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
 
     # get real_types
-    # allowed_datatypes, sub_types = dc.create_data_types()
+    allowed_datatypes, sub_types = dc.create_data_types()
     real_types = sub_types['real']
 
     # just * means process all

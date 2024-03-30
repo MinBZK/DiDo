@@ -28,8 +28,8 @@ SUPPLIERS_TO_PROCESS: ['*']
 
 # if a table exists it's data is prepared for import yes/no
 # thereby overwriting existing files when yes
-ENFORCE_PREP_IF_TABLE_EXISTS: yes
-ENFORCE_IMPORT_IF_TABLE_EXISTS: yes
+ENFORCE_PREP_IF_TABLE_EXISTS: no
+ENFORCE_IMPORT_IF_TABLE_EXISTS: no
 
 # Indicate whether delivery contains header row or not
 HEADERS:
