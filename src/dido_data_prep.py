@@ -24,8 +24,8 @@ import simple_table as st
 from dido_common import DiDoError
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
-
 # pylint: disable=logging-fstring-interpolation, too-many-locals
+# pylint: pointless-string-statement
 
 # print all columns of dataframe
 pd.set_option('display.max_columns', None)
@@ -257,11 +257,24 @@ def get_bootstrap_data_headers(server_config: dict):
 ### get_bootstrap_data_headers ###
 
 
-def load_separate_header_file(supplier_config: dict,
+def load_pdirekt_header_file(supplier_config: dict,
                               supplier: str,
                               schema: pd.DataFrame,
                               encoding: str,
                              ):
+    """ Loads a P-Direkt header file
+
+    It returns column FIELDNAME as a results
+
+    Args:
+        supplier_config (dict): configuration of the supply
+        supplier (str): name of the supplier
+        schema (pd.DataFrame): schema definition
+        encoding (str): encoding of the file, same as data
+
+    Returns:
+        list: the content of the FILEDNAME column as a list
+    """
     data_dicts = dc.get_par(supplier_config, 'data_description')
 
     _, fn, ext = dc.split_filename(data_dicts[supplier]['header_file'])
@@ -291,51 +304,11 @@ def load_separate_header_file(supplier_config: dict,
         encoding = encoding,
     )
 
-    # compare columns from header file with schema columns
-    # remove meta columns from schema
-    schema_columns = schema['kolomnaam'].tolist()[6:]
+    column_names = headers['FIELDNAME'].tolist()
 
-    # Convert column names to Postgres standard names for header
-    header_columns = [dc.change_column_name(x)
-                      for x in headers['FIELDNAME']]
+    return column_names
 
-    # now they should be of equal length
-    errors = False
-    logger.debug(f'lengths: schema {len(schema_columns)}, headers {len(header_columns)}')
-
-    # if not, examine what's wrong
-    if len(schema_columns) != len(header_columns):
-        errors = True
-        logger.info('Header columns not in datadictionary:')
-        for col in header_columns:
-            if col not in schema_columns:
-                logger.info(col)
-
-        logger.info('Data dictionary columns not in headers:')
-        for col in schema_columns:
-            if col not in header_columns:
-                logger.info(col)
-
-    # if lengths are equal, column names should be as well
-    else:
-        for i in range(len(header_columns)):
-            if schema_columns[i] != header_columns[i]:
-                errors = True
-                logger.error(f'*** schema column name, {schema_columns.iloc[i]}, '
-                             f'not equal to header column name: {header_columns.iloc[i]}')
-            # if
-        # for
-    # if
-
-    if errors:
-        raise DiDoError('*** Columns from header document not equal those of schema')
-
-    # at this point we are sure that the header file contains the same number of headers
-    # in the same order with the same names as provided in the schema
-
-    return schema_columns
-
-### load_separate_header_file ###
+### load_pdirekt_header_file ###
 
 
 def load_data(supplier_config: dict,
@@ -361,12 +334,15 @@ def load_data(supplier_config: dict,
     # delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
 
     cpu = time.time()
+
     _, fn, _ = dc.split_filename(data_dicts[supplier]['data_file'])
     filename = os.path.join(data_dicts[supplier]['path'],
                             data_dicts[supplier]['data_file'])
 
+    logger.info('')
     logger.info(f'Reading data file {fn}, encoding: {encoding}')
 
+    # test if data is to be fetched from s3: if so, copy to root/data/<supplier>
     server_type = data_dicts[supplier]['server']
     if server_type == 's3':
         server_path = data_dicts[supplier]['server_path']
@@ -376,16 +352,6 @@ def load_data(supplier_config: dict,
             force_overwrite = True
         )
 
-    # schema = data_dicts[supplier]['schema']
-    columns = schema['kolomnaam'].tolist()
-
-    # The data is provided raw, without columns and without bronbestand data
-    # To add columns remove the brondbestand columns from the schema kolomnaam
-    # This yields a list of columns which can be added to the data
-    extra_columns = get_bootstrap_data_headers(server_config)
-    for col in extra_columns:
-        columns.remove(col)
-
     # set delimiter when present
     delimiter = dc.get_par(supplier_config, 'delimiter', ';')
 
@@ -393,27 +359,6 @@ def load_data(supplier_config: dict,
     headers_present = False
     if supplier in headers.keys():
         headers_present = headers[supplier]
-
-    # find out if the file contains headers or if a header sheet is provided
-    header_result = None
-
-    # check for header sheet
-    if 'header_file' in supplier_config.keys():
-        # a header sheet is provided
-
-        _, fn, ext = dc.split_filename(data_dicts[supplier]['header_file'])
-        header_result = load_separate_header_file(
-            supplier_config = supplier_config,
-            supplier = supplier,
-            schema = schema,
-            encoding = encoding,
-        )
-
-        if headers_present:
-            logger.warning('!!! You specify that headers are present and a header file')
-            logger.warning('!!! The header file rules, but are you sure you know what you are doing?')
-        # if
-    # if
 
     logger.info ('')
     logger.info(f'Reading: {filename}')
@@ -448,8 +393,17 @@ def load_data(supplier_config: dict,
 
     # if
 
-    if header_result is not None:
-        data.columns = header_result
+    # find out if the file contains headers or if a header sheet is provided
+
+    # Fetch schema columns
+    columns = schema['kolomnaam'].tolist()
+
+    # The data is provided raw, without columns and without bronbestand data
+    # To add columns remove the brondbestand columns from the schema kolomnaam
+    # This yields a list of columns which can be added to the data
+    extra_columns = get_bootstrap_data_headers(server_config)
+    for col in extra_columns:
+        columns.remove(col)
 
     ram = data.memory_usage(index=True).sum()
     cpu = time.time() - cpu
@@ -460,6 +414,114 @@ def load_data(supplier_config: dict,
     return data
 
 ### load_data ###
+
+
+def evaluate_headers(data: pd.DataFrame,
+                     supplier_config: dict,
+                     supplier: str,
+                     schema: pd.DataFrame,
+                     headers: dict,
+                     encoding: str,
+                    ):
+    """ Compares a list of headers with schema columns and flags inconsistencies
+
+    Args:
+        data (pd.DataFrame): data frame containing data and headers
+        supplier_config (dict): dictionary with info for each supplier
+        supplier (str): current supplier
+        schema (pd.DataFrame): schema definition of the data
+    """
+    data_dicts = dc.get_par(supplier_config, 'data_description')
+    header_columns = None
+
+    logger.info('')
+
+    # 1. if not, test if headers are present in the data
+    headers_present = False
+    if supplier in headers.keys():
+        headers_present = headers[supplier]
+
+        if headers_present:
+            header_columns = data.columns
+
+            logger.info('Headers present in data')
+            logger.debug(f'Data columns: {header_columns}')
+
+    # 2. test if a header file is present
+    if 'header_file' in supplier_config.keys():
+        # a header sheet is provided
+
+        _, fn, ext = dc.split_filename(data_dicts[supplier]['header_file'])
+        header_columns = load_pdirekt_header_file(
+            supplier_config = supplier_config,
+            supplier = supplier,
+            schema = schema,
+            encoding = encoding,
+        )
+
+        logger.info(f'Headers present in header file {fn}{ext}')
+        logger.debug(f'Columns: {header_columns}')
+
+        if headers_present:
+            logger.warning('!!! You specify that headers are present and a header file')
+            logger.warning('!!! This means that the headers from the header file are used')
+        # if
+    # if
+
+    # TODO: to strip the dido meta columns from the schema, simply the first
+    # 6 columns are stripped. This should be derived from the extra_columns themselves
+
+    # 3. if not, get them from the schema
+    if header_columns is None or len(header_columns) == 0:
+        header_columns = schema['kolomnaam'].tolist()[6:]
+
+        logger.info('No headers supplied, taken from schema')
+        logger.debug(f'Columns: {header_columns}')
+
+    header_columns = [dc.change_column_name(x) for x in header_columns]
+
+    # remove meta columns from schema, currently the first six columns
+    schema_columns = schema['kolomnaam'].tolist()[6:]
+
+    # now they should be of equal length
+    errors = False
+    logger.info(f'Number of schema columns: {len(schema_columns)} vs. supplied headers: {len(header_columns)}')
+
+    # if not, examine what's wrong
+    if len(schema_columns) != len(header_columns):
+        errors = True
+        logger.error('Number of columns do not match')
+
+        logger.info('Header columns not in schema:')
+        for col in header_columns:
+            if col not in schema_columns:
+                logger.info(col)
+
+        logger.info('Data dictionary columns not in headers:')
+        for col in schema_columns:
+            if col not in header_columns:
+                logger.info(col)
+
+    else:
+        # if lengths are equal, column names should be as well
+        for i in range(len(header_columns)):
+            if schema_columns[i] != header_columns[i]:
+                errors = True
+                logger.error(f'*** schema column name, {schema_columns[i]}, '
+                             f'not equal to header column name: {header_columns[i]}')
+            # if
+        # for
+    # if
+
+    if errors:
+        raise DiDoError('*** Serious problems in description of the data, DiDo cannot continue')
+
+    else:
+        logger.info('[Provided header names are consistrent with schema]')
+
+    return header_columns
+
+### evaluate_headers ###
 
 
 def process_data(data: pd.DataFrame,
@@ -877,6 +939,7 @@ def prepare_one_delivery(cargo: dict,
 
         dc.report_ram('[Memory use before loading data]')
 
+        # Read data
         data = load_data(
             supplier_config = cargo,
             supplier = leverancier_id,
@@ -887,8 +950,22 @@ def prepare_one_delivery(cargo: dict,
             encoding = encoding,
         )
 
-        # create a deepcopy of renames as it will be modified inside process_data
+        # Acquire column names
+        headers = evaluate_headers(
+            data = data,
+            supplier_config = cargo,
+            supplier = leverancier_id,
+            schema = leverancier_schema,
+            headers = headers,
+            encoding = encoding,
+        )
+        if headers is not None:
+            data.columns = headers
+
+        # Create a deepcopy of renames as it will be modified inside process_data
         rename_copy = copy.deepcopy(renames)
+
+        # Rename applicable data
         data = process_data(
             data = data,
             supplier = leverancier_id,
@@ -899,6 +976,7 @@ def prepare_one_delivery(cargo: dict,
             strip_space = strip_space,
         )
 
+        # Save results
         save_data(
             data = data,
             data_dirs = cargo['data_description'],

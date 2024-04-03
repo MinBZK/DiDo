@@ -35,6 +35,8 @@ from dido_common import DiDoError
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
+# pylint: pointless-string-statement
+
 #######################################################################################################################
 #
 # Fase 1 - Read and check the schema files
