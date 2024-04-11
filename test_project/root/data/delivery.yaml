@@ -1,25 +1,9 @@
 DELIVERIES:
-  pdirekt:
-    delivery_2023-Q2:
-      code_bronbestand: PDIREKT_SALARIS
+  didotest:
+    delivery_2024:
+      code_bronbestand: DIDOTEST
       levering_leveringsdatum: 2024-02-29
-      data_file: s3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie/salaris/20240229_ZBIOSAL01_Salaris_editie_20230630.CSV
-      data_check: yes
-      origin:
-        input: <file>
-
-    delivery_2023-Q3:
-      code_bronbestand: PDIREKT_SALARIS
-      levering_leveringsdatum: 2024-02-29
-      data_file: s3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie/salaris/20240229_ZBIOSAL01_Salaris_editie_20230930.CSV
-      data_check: yes
-      origin:
-        input: <file>
-
-    delivery_2023-Q4:
-      code_bronbestand: PDIREKT_SALARIS
-      levering_leveringsdatum: 2024-02-29
-      data_file: s3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie/salaris/20240229_ZBIOSAL01_Salaris_editie_20231231.CSV
+      data_file: s3://s3_dgdoobi_dwh_sta_prd/upload_test/didotest/dido_test.csv
       data_check: yes
       origin:
         input: <file>
@@ -28,12 +12,12 @@ SUPPLIERS_TO_PROCESS: ['*']
 
 # if a table exists it's data is prepared for import yes/no
 # thereby overwriting existing files when yes
-ENFORCE_PREP_IF_TABLE_EXISTS: yes
-ENFORCE_IMPORT_IF_TABLE_EXISTS: yes
+ENFORCE_PREP_IF_TABLE_EXISTS: no
+ENFORCE_IMPORT_IF_TABLE_EXISTS: no
 
 # Indicate whether delivery contains header row or not
 HEADERS:
-  pdirekt: no
+  didotest: yes
 
 # Definieer de kolommen waarvan de de spaties links en rechts moeten worden gestript
 # voor iedere cel. Geef kolommen op als lijst:
@@ -41,14 +25,14 @@ HEADERS:
 #  - ['*']: alle kolommen worden gestript
 #  - ['a', 'b', 'd']: van kolommen a, b, d worden de spaties links en rechts gestript
 STRIP_SPACE:
-  pdirekt: ['*']
+  didotest: ['*']
 
 # Rename data on column base
 # Conversies voor ikb_jopi: ontbrekende datums worden aangegeven door 0(0000000)
 # In DWH is de conventie 29991231
 # Niet nodig voor vertaaltabel
 RENAME_DATA:
-  pdirekt:
+  didotest:
     kalenderdag:             {"re": True, "^00000000$":"29991231", "^0$": "29991231"}
     pds_datum_ambtsjubileum: {"re": True, "^00000000$":"29991231", "^0$": "29991231"}
     datum_uit_dienst:        {"re": True, "^00000000$":"29991231", "^0$": "29991231"}

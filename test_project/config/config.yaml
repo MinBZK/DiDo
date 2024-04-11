@@ -1,125 +1,132 @@
 SUPPLIERS:
-#  dido_test:
-#    source_file: Bronanalyse_dido_test
-#    data_file: dido_test.csv
-  dido_test:
-    schema_file: Bronanalyse_dido_test
-    delimiter: ';'
-    encoding: utf8
+  didotest:
+    data_dictionary:
+      schema_source: <Didotest>
+      column_name: Omschrijving
+      data_dict: Data-Dictionary-Gegevenslevering-Didotest
+      # merge_with: Data_Dictionary_pdirekt_addendum.csv
 
-    delivery-1:
-      data_file: dido_test.csv
-      data_check: yes
-      levering_rapportageperiode: 2022-J1
-
-      delivery_type:
-        mode: insert
-      
-      origin:
-        input: <file>
-        source: mutations inc
+      columns:
+        kolomnaam: Veldnaam
+        leverancier_kolomnaam: Veldnaam
+        leverancier_kolomtype: TYPE
+        leverancier_info_1: Omschrijving
+        gebruiker_info_1: ATTRIBUTEN
+        gebruiker_info_2: TEKSTEN
+        gebruiker_info_3: HIERARCHIE
+        beschrijving: "Unnamed: 8"
 
 
-    
-SUPPLIERS_TO_PROCESS: [dido_test]
+    schema_file: Bronanalyse_Didotest
 
-# database credentials for ODL database. Do not fill out POSTGRES_USER and _PW
-# Will be replaced by those of your .env file
-
-SERVER_CONFIGS:
-  ODL_SERVER_CONFIG:
-    POSTGRES_PORT: 5432
-    POSTGRES_DB: techniek
-    POSTGRES_SCHEMA: datamanagement
-
-  # database credentials for storing the data. _USER and _PW will be replaced by .env
-  DATA_SERVER_CONFIG:
-    POSTGRES_PORT: 5432
-    POSTGRES_DB: test_database
-    POSTGRES_SCHEMA: didotest
-
-  # database credentials for xtracting the data. _USER and _PW will be replaced by .env
-  FOREIGN_SERVER_CONFIG:
-    POSTGRES_PORT: 5432
-    POSTGRES_DB: test_database
-    POSTGRES_SCHEMA: historie
+    origin:
+      input: <file>
+      source: didotest
 
 # select server to use as POSTGRES_HOST
 HOST: development
 
-PROJECT_NAME: didotest
+PROJECT_NAME: au
 ROOT_DIR: root
 WORK_DIR: work
-
-VERBOSE: False
-
-# SAFE_GUARDS faciliteert het instellen van limieten zodat getest kan worden op
-# een beperkte hoeveelheid data of dat afgebroken wordt als er teveel fouten zijn gedetekteerd
-SAFE_GUARDS:
-  data_test_limit: 10_000
-  data_test_fraction: 0
-
-
-LIMITATIONS:  
-  max_rows: 0 # <1 = read all rows
-  max_errors: 1_000
-
-# which columns to write for markdown tables and in which order
-COLUMNS:
-  - 'kolomnaam'
-  - 'datatype'
-  - 'beschrijving'
-  - 'leverancier_kolomnaam'
-  - 'leverancier_kolomtype'
-  - 'code_attribuut_sleutel'
-  - 'code_attribuut'
-  - 'code_bronbestand'
-  - 'keytype'
-  - 'constraints'
-  - 'domein'
-  - 'verstek'
-  - 'positie'
-  - 'avg_classificatie'
-  - 'veiligheid_classificatie'
-  - 'attribuut_datum_begin'
-  - 'attribuut_datum_einde'
-
 
 # Allows conversion from leverancier_kolomtype to datatype when datatype is empty
 DATATYPES:
     CHAR: text
     CUKY: text
     UNIT: text
-    NUMC: numeric
-    DATS: date     # gaat dit goed met inladen?
+    NUMC: integer
+    INT4: integer
+    DATS: date
     QUAN: numeric
-    DEC:  numeric  # float?
-    CURR: numeric  # float?
+    DEC:  numeric
+    CURR: numeric
 
+# columns to show in documentation
+# COLUMNS:  [] # Empty list = show all columns
 
-### Parameters for d3g-import
+# which columns to write for markdown tables and in which order
+COLUMNS:
+  - kolomnaam
+  - leverancier_info_1
+  - datatype
+  - beschrijving
+  - leverancier_kolomnaam
+  - leverancier_kolomtype
+  - code_attribuut_sleutel
+  - leverancier_info_2
+  - code_attribuut
+  - code_bronbestand
+  - constraints
+  - domein
+  - verstek
+  - positie
+  - avg_classificatie
+  - veiligheid_classificatie
+  - gebruiker_info_1
+  - gebruiker_info_2
+  - gebruiker_info_3
+  - kolom_expiratie_datum
+  - attribuut_datum_begin
+  - attribuut_datum_einde
 
+# database credentials for ODL database. Do not fill out POSTGRES_USER and _PW
+# Will be added by those of your .env file
+SERVER_CONFIGS:
+  ODL_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: techniek
+    POSTGRES_SCHEMA: datamanagement
 
-### Parameters for d3g-data-prep
+  # database credentials for storing the data. _USER and _PW will be added from .env
+  DATA_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: test_database
+    POSTGRES_SCHEMA: didotest
+
+  # database credentials for xtracting the data. _USER and _PW will be added from .env
+  FOREIGN_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: data
+    POSTGRES_SCHEMA: odl
+
+### Parameters for dido-data-prep
+
+# Indicate whether supplu contains header row or not
+HEADERS:
+  didotest: no
 
 # Rename data on column base
-# Conversies voor fake_oud: ontbrekende datums worden aangegeven door 0(0000000)
+# Conversies voor ikb_jopi: ontbrekende datums worden aangegeven door 0(0000000)
 # In DWH is de conventie 29991231
 # Niet nodig voor vertaaltabel
 RENAME_DATA:
-  fake_oud:
-    datefrom:    {"00000000":"29991231", "0": "29991231"}
-    dateto:      {"00000000":"29991231", "0": "29991231"}
-    cpr_chon:    {"00000000":"29991231", "0": "29991231"}
-    amount:      {"re": True, "(.*)-": "-\\1"}
-  fake_nieuw:
-    datefrom:    {"00000000":"29991231", "0": "29991231"}
-    dateto:      {"00000000":"29991231", "0": "29991231"}
-    cpr_chon:    {"00000000":"29991231", "0": "29991231"}
-    amount:      {"re": True, "(.*)-": "-\\1"}
-  faik:
+  didotest:
+    geldig_van:   {"00000000":"99991231", "0": "99991231"}
+    geldig_tot:   {"00000000":"99991231", "0": "99991231"}
+    gewijzigd_op: {"00000000":"99991231", "0": "99991231"}
+    pds_datum_ambtsjubileum: {"re": True, "^$": "99991231"}
+    datum_uit_dienst:        {"re": True, "^$": "99991231"}
+    bedrag:                  {"re": True, "(.*)-": "-\\1"}
 
-# Parameters for d3g-create
+# Definieer de kolommen waarvan de de spaties links en rechts moeten worden gestript
+# voor iedere cel. Geef kolommen op als lijst:
+#  - [] lege lijst: niets wordt gestript
+#  - ['*']: alle kolommen worden gestript
+#  - ['a', 'b', 'd']: kolommen a, b, d worden gestript
+STRIP_SPACE:
+  didotest: ['*']
+
+### Parameters for dido-import
+# LIMITATIONS faciliteert het instellen van limieten zodat getest kan worden op
+# een beperkte hoeveelheid data of dat afgebroken wordt als er teveel fouten zijn gedetekteerd
+LIMITATIONS:
+  max_rows: 1_000 # <1 = read all rows
+  max_errors: 1_000
+
+SNAPSHOTS:
+  zip: yes
+  destroy_todo: yes
 
 # tables to be created
 TABLES:
@@ -144,8 +151,8 @@ TABLES:
     create_data: yes
     table: yes
     data: no
-    prefix: ''
-    suffix: ''
+    prefix: 'tabel_uitleg.md'
+    suffix: 'einde-meta-info.md'
 
   datakwaliteit_feit:
     table_root: datakwaliteit_feit

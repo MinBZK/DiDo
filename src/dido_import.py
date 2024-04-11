@@ -2250,3 +2250,8 @@ if __name__ == '__main__':
 
     # go
     dido_import('Importing Data')
+else:
+    # create logger in project directory
+    cli, args = dc.read_cli()
+    log_file = os.path.join(args.project, 'logs', cli['name'] + '.log')
+    logger = dc.create_log(log_file, level = 'DEBUG')

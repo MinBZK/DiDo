@@ -1,0 +1,172 @@
+SUPPLIERS:
+#  dido_test:
+#    source_file: Bronanalyse_dido_test
+#    data_file: dido_test.csv
+  dido_test:
+    schema_file: Bronanalyse_dido_test
+    delimiter: ';'
+    encoding: utf8
+
+    delivery-1:
+      data_file: dido_test.csv
+      data_check: yes
+      levering_rapportageperiode: 2022-J1
+
+      delivery_type:
+        mode: insert
+      
+      origin:
+        input: <file>
+        source: mutations inc
+
+
+    
+SUPPLIERS_TO_PROCESS: [dido_test]
+
+# database credentials for ODL database. Do not fill out POSTGRES_USER and _PW
+# Will be replaced by those of your .env file
+
+SERVER_CONFIGS:
+  ODL_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: techniek
+    POSTGRES_SCHEMA: datamanagement
+
+  # database credentials for storing the data. _USER and _PW will be replaced by .env
+  DATA_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: test_database
+    POSTGRES_SCHEMA: didotest
+
+  # database credentials for xtracting the data. _USER and _PW will be replaced by .env
+  FOREIGN_SERVER_CONFIG:
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: test_database
+    POSTGRES_SCHEMA: historie
+
+# select server to use as POSTGRES_HOST
+HOST: development
+
+PROJECT_NAME: didotest
+ROOT_DIR: root
+WORK_DIR: work
+
+VERBOSE: False
+
+# SAFE_GUARDS faciliteert het instellen van limieten zodat getest kan worden op
+# een beperkte hoeveelheid data of dat afgebroken wordt als er teveel fouten zijn gedetekteerd
+SAFE_GUARDS:
+  data_test_limit: 10_000
+  data_test_fraction: 0
+
+
+LIMITATIONS:  
+  max_rows: 0 # <1 = read all rows
+  max_errors: 1_000
+
+# which columns to write for markdown tables and in which order
+COLUMNS:
+  - 'kolomnaam'
+  - 'datatype'
+  - 'beschrijving'
+  - 'leverancier_kolomnaam'
+  - 'leverancier_kolomtype'
+  - 'code_attribuut_sleutel'
+  - 'code_attribuut'
+  - 'code_bronbestand'
+  - 'keytype'
+  - 'constraints'
+  - 'domein'
+  - 'verstek'
+  - 'positie'
+  - 'avg_classificatie'
+  - 'veiligheid_classificatie'
+  - 'attribuut_datum_begin'
+  - 'attribuut_datum_einde'
+
+
+# Allows conversion from leverancier_kolomtype to datatype when datatype is empty
+DATATYPES:
+    CHAR: text
+    CUKY: text
+    UNIT: text
+    NUMC: numeric
+    DATS: date     # gaat dit goed met inladen?
+    QUAN: numeric
+    DEC:  numeric  # float?
+    CURR: numeric  # float?
+
+
+### Parameters for d3g-import
+
+
+### Parameters for d3g-data-prep
+
+# Rename data on column base
+# Conversies voor fake_oud: ontbrekende datums worden aangegeven door 0(0000000)
+# In DWH is de conventie 29991231
+# Niet nodig voor vertaaltabel
+RENAME_DATA:
+  fake_oud:
+    datefrom:    {"00000000":"29991231", "0": "29991231"}
+    dateto:      {"00000000":"29991231", "0": "29991231"}
+    cpr_chon:    {"00000000":"29991231", "0": "29991231"}
+    amount:      {"re": True, "(.*)-": "-\\1"}
+  fake_nieuw:
+    datefrom:    {"00000000":"29991231", "0": "29991231"}
+    dateto:      {"00000000":"29991231", "0": "29991231"}
+    cpr_chon:    {"00000000":"29991231", "0": "29991231"}
+    amount:      {"re": True, "(.*)-": "-\\1"}
+  faik:
+
+# Parameters for d3g-create
+
+# tables to be created
+TABLES:
+  schema:
+    table_root: attribuut_meta
+    template: yes
+    comment: <odl>
+    schema: <self>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''
+
+  meta:
+    table_root: bestand_meta
+    template: meta
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''
+
+  datakwaliteit_feit:
+    table_root: datakwaliteit_feit
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''
+
+  levering_feit:
+    table_root: levering_feit
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+    prefix: ''
+    suffix: ''
