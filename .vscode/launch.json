@@ -13,11 +13,11 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Test",
+            "name": "DiDo: Didotest",
             "type": "python",
             "request": "launch",
             "program": "${file}",
-            "args": ["-p", "/data/arnoldreinders/apps/dido/project_test",
+            "args": ["-p", "/data/aliugurbas/github/DiDo/test_project", // /data/arnoldreinders/apps/dido/project_test
                      "-d", "delivery.yaml"],
             "console": "integratedTerminal",
             "justMyCode": true
