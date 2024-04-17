@@ -77,6 +77,25 @@ DIR_SQL     = 'sql'
 
 VAL_DIDO_GEN = '(dido generated)'
 
+# Version labels
+ODL_VERSION_MAJOR  = 'odl_version_major'
+ODL_VERSION_MINOR  = 'odl_version_minor'
+ODL_VERSION_PATCH  = 'odl_version_patch'
+ODL_VERSION_MAJOR_DATE  = 'odl_version_major_date'
+ODL_VERSION_MINOR_DATE  = 'odl_version_minor_date'
+ODL_VERSION_PATCH_DATE  = 'odl_version_patch_date'
+DIDO_VERSION_MAJOR = 'dido_version_major'
+DIDO_VERSION_MINOR = 'dido_version_minor'
+DIDO_VERSION_PATCH = 'dido_version_patch'
+DIDO_VERSION_MAJOR_DATE = 'dido_version_major_date'
+DIDO_VERSION_MINOR_DATE = 'dido_version_minor_date'
+DIDO_VERSION_PATCH_DATE = 'dido_version_patch_date'
+
+# Miscellaneous
+DATE_FORMAT = '%Y-%m-%d'
+TIME_FORMAT = '%H:%M:%S'
+DATETIME_FORMAT = f'{DATE_FORMAT} {TIME_FORMAT}'
+
 
 class DiDoError(Exception):
     """ To be raised for DiDo exceptions
@@ -167,7 +186,16 @@ def create_log(filename: str, level: int = logging.INFO, reset: bool = True) -> 
 
     log = logging.getLogger()
     log.setLevel(logging.DEBUG)
-    dictConfig(logging_configuration)
+
+    try:
+        dictConfig(logging_configuration)
+    except:
+        print('*** Error while initializing logger.')
+        print(f'*** Either the path to the log file does not exist: {filename}')
+        print('*** or the "logs" directory does not exist in that path')
+        raise DiDoError('*** Aboring execution')
+
+    # try..except
 
     return log
 
@@ -673,41 +701,83 @@ def load_credentials(project_dir: str) -> dict:
 ### load_credentials ###
 
 
-def display_dido_header(text: str = None):
-    if text is None:
-        return
-
-    dido = ' DiDo - Document Data Definition Generator '
-    if len(text) > len(dido):
-        text = text[0:len(dido)]
-
-    delta = len(dido) - len(text)
+def center_text(text: str, width: int):
+    delta = width - len(text)
     delta_2 = int(delta / 2)
     front = delta_2
     back = delta - delta_2
     text = '*' + front * ' ' + text + back * ' ' + '*'
-    dido = '*' + dido + '*'
-    asterisks = len(dido) * '*'
-    between = '*' + (len(dido) - 2) * ' ' + '*'
+    # dido = '*' + dido + '*'
+    # asterisks = len(dido) * '*'
+    # between = '*' + (len(dido) - 2) * ' ' + '*'
+
+    return text
+
+### center_text ###
+
+
+def display_dido_header(text: str = None, config = None):
+    if text is None:
+        return
+
+    dido = ' DiDo - Document Data Definition Generator '
+    text = f' {text} '
+    dido_len = len(dido)
+    if len(text) > dido_len:
+        dido_len = len(text)
+
+    center_text(dido, dido_len)
+
+    # delta = len(dido) - len(text)
+    # delta_2 = int(delta / 2)
+    # front = delta_2
+    # back = delta - delta_2
+    # text = '*' + front * ' ' + text + back * ' ' + '*'
+    # dido = '*' + dido + '*'
+    asterisks = (dido_len + 2) * '*'
+    between = '*' + (dido_len) * ' ' + '*'
 
     logger.info('')
     logger.info(asterisks)
-    logger.info(between)
-    logger.info(dido)
-    logger.info(between)
-    logger.info(text)
-    logger.info(between)
+    logger.info(center_text(' ', dido_len))
+    logger.info(center_text(dido, dido_len))
+    logger.info(center_text(' ', dido_len))
+    logger.info(center_text(text, dido_len))
+    logger.info(center_text(' ', dido_len))
+
+    if config is not None:
+        major = get_par_par(config, 'PARAMETERS', 'DIDO_VERSION_MAJOR', '')
+        minor = get_par_par(config, 'PARAMETERS', 'DIDO_VERSION_MINOR', '')
+        patch = get_par_par(config, 'PARAMETERS', 'DIDO_VERSION_PATCH', '')
+        version = f' DiDo version {major}.{minor}.{patch} '
+        version = center_text(version, dido_len)
+        logger.info(version)
+        logger.info(center_text(' ', dido_len))
+
     logger.info(asterisks)
     logger.info('')
 
     return
 
+### display_dido_header ###
+
 
 def get_limits(config: dict):
+    """ Read LIMITS
+
+    Args:
+        config (dict): configuration containing the limits
+
+    Returns:
+        (tuple): the limited variables
+    """
+    max_rows = None
+    max_errors = None
+    data_test_fraction = 0 # limitations['data_test_fraction']
+
     if 'LIMITS' in config:
         limitations = config['LIMITS']
         max_rows = limitations['max_rows']
-        data_test_fraction = 0 # limitations['data_test_fraction']
         max_errors = limitations['max_errors']
 
         if max_rows < 1:

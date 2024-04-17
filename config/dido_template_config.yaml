@@ -31,7 +31,7 @@ SERVER_CONFIGS:
   # .pgpass or .env in that order
   DATA_SERVER_CONFIG:
     POSTGRES_PORT: 5432
-    POSTGRES_DB: test_database
+    POSTGRES_DB: data
     POSTGRES_SCHEMA: odl
 
   # database credentials for xtracting the data.
@@ -44,11 +44,32 @@ SERVER_CONFIGS:
     POSTGRES_SCHEMA: same_or_other_schema
 
 # select server to use as POSTGRES_HOST: development or production
-HOST: development
+HOST: datawarehouse_dev
 
 # which columns to write for markdown tables and in which order
 COLUMNS:
-  - '*'
+  - kolomnaam
+  - datatype
+  - beschrijving
+  - leverancier_kolomnaam
+  - leverancier_kolomtype
+  - code_attribuut_sleutel
+  - leverancier_info_1
+  - leverancier_info_2
+  - code_attribuut
+  - code_bronbestand
+  - constraints
+  - domein
+  - verstek
+  - positie
+  - avg_classificatie
+  - veiligheid_classificatie
+  - gebruiker_info_1
+  - gebruiker_info_2
+  - gebruiker_info_3
+  - kolom_expiratie_datum
+  - attribuut_datum_begin
+  - attribuut_datum_einde
 
 {data_types}
 

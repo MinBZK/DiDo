@@ -1,30 +1,11 @@
-SUPPLIERS:
-#  dido_test:
-#    source_file: Bronanalyse_dido_test
-#    data_file: dido_test.csv
-  dido_test:
-    schema_file: Bronanalyse_dido_test
-    delimiter: ';'
-    encoding: utf8
+PROJECT_NAME: dido_import
+ROOT_DIR: root
+WORK_DIR: work
 
-    delivery-1:
-      data_file: dido_test.csv
-      data_check: yes
-      levering_rapportageperiode: 2022-J1
-
-      delivery_type:
-        mode: insert
-      
-      origin:
-        input: <file>
-        source: mutations inc
-
-
-    
-SUPPLIERS_TO_PROCESS: [dido_test]
+VERBOSE: False
 
 # database credentials for ODL database. Do not fill out POSTGRES_USER and _PW
-# Will be replaced by those of your .env file
+# Will be replaced by those of your .pgpass/.env file
 
 SERVER_CONFIGS:
   ODL_SERVER_CONFIG:
@@ -45,13 +26,11 @@ SERVER_CONFIGS:
     POSTGRES_SCHEMA: historie
 
 # select server to use as POSTGRES_HOST
-HOST: development
+HOST: datawarehouse_dev
 
-PROJECT_NAME: didotest
-ROOT_DIR: root
-WORK_DIR: work
-
-VERBOSE: False
+SUPPLIERS:
+  dido_test:
+    schema_file: Bronanalyse_dido_test
 
 # SAFE_GUARDS faciliteert het instellen van limieten zodat getest kan worden op
 # een beperkte hoeveelheid data of dat afgebroken wordt als er teveel fouten zijn gedetekteerd
@@ -60,7 +39,7 @@ SAFE_GUARDS:
   data_test_fraction: 0
 
 
-LIMITATIONS:  
+LIMITATIONS:
   max_rows: 0 # <1 = read all rows
   max_errors: 1_000
 

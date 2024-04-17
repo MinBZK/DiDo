@@ -2,8 +2,8 @@
 # this file is developers only
 
 BASIC_TYPES:
-  integer: "^[+-]?[0-9]+$"
-  real: "^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([Ee][+-]?[0-9]+)?$"
+  integer: "^[+-]?[0-9]+$|^[ ]*$"
+  real: "^[+-]?([0-9]+([.][0-9]*)?$|^[.][0-9]+)([Ee][+-]?[0-9]+)?$|^$"
   boolean: "^(0|1|true|false|yes|no)$"
   date: "(^[0-9]{4}-[0-1][0-9]-[0-3][0-9])$|^([0-9]{4}[0-1][0-9][0-3][0-9])$|^$"
   timestamp: "(^[0-9]{4}-[0-1][0-9]-[0-3][0-9])|^([0-9]{4}[0-1][0-9][0-3][0-9])( [0-2][0-9]:[0-6][0-9]:[0-6][0-9]){0,1}$|^$"
@@ -21,8 +21,9 @@ SUB_TYPES:
 WORKDIR_STRUCTURE: docs,sql,schemas,todo,done,tmp,tests
 
 # versions
-ODL_VERSION: 0.9.1
-DIDO_VERSION: 0.7.3
+DIDO_VERSION_MAJOR: 0
+DIDO_VERSION_MINOR: 7
+DIDO_VERSION_PATCH: 5
 
 SERVERS:
   datawarehouse_dev: 10.10.12.12

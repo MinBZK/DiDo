@@ -12,15 +12,11 @@ anders moeten de schemafiles in de root directory worden aangepast. Wat in de
 work directrory staat wordt altijd overschreven door dido_begin.
 """
 import os
-import sys
-import json
 import time
 import shutil
-import requests
 import pandas as pd
 
 from datetime import datetime
-from dido_list import dido_list
 from requests.auth import HTTPBasicAuth
 
 # Don't forget to set PYTHONPATH to your python library files
@@ -30,12 +26,13 @@ import dido_common as dc
 import simple_table as st
 
 from dido_common import DiDoError
+from dido_list import dido_list
 
 # show all columns of dataframe
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
-# pylint: pointless-string-statement
+# pylint: disable=pointless-string-statement, logging-fstring-interpolation
 
 #######################################################################################################################
 #
@@ -404,7 +401,6 @@ def create_workdir_structure(config_vars: dict, server_config):
         config_vars -- project configuration
     """
     # load the data from the parameters table
-    #bootstrap_data = load_odl_table('odl_parameters_description', server_config).set_index('kolomnaam')
     bootstrap_data = dc.load_parameters()
 
     # get the workdirs string
@@ -1458,6 +1454,61 @@ def merge_meta_data_with_description(desc: pd.DataFrame, metadata: pd.DataFrame)
 ### merge_meta_data_with_description  ###
 
 
+def merge_meta_data_with_odl_data(config: dict, metadata: pd.DataFrame, metadata_data: pd.DataFrame):
+    """ Assigns default values tot metadata from ODL
+
+    The ODL metadata table contains meta data fro general use, especially
+     version information. When a cell in metadata is empty it is assigned
+     its default value from ODL (metadata_data)
+
+     Note: the version variables must be accessed from PARAMETERS by their name,
+           however, they must be accessed from the meta data table by their
+           dido_common.py name. That is possible using 'getattr' but it is a
+           trick. Be careful using it.
+
+    Args:
+        metadata (pd.DataFrame): meta data of current project
+        metadata_data (pd.DataFrame): default meta data from ODL
+
+    Returns:
+        pd.DataFrame: _description_metadata enhanced with ODL default values
+    """
+    logger.debug('Assigning ODL metadata to empty cells in DiDo metadata (esp. version info)')
+
+    # first preset the DiDo version from parameters in the config dict
+    nu = datetime.now().strftime(dc.DATETIME_FORMAT)
+
+    for key in ['DIDO_VERSION_MAJOR', 'DIDO_VERSION_MINOR', 'DIDO_VERSION_PATCH']:
+        try:
+            value = str(dc.get_par_par(config, 'config', 'PARAMETERS', '')[key])
+            var = getattr(dc, key)
+            metadata.loc[0, var] = value
+            var = getattr(dc, key + '_DATE')
+            metadata.loc[0, var] = nu
+            logger.info(f'{key} copied from dido.yaml into meta data: {value}, {nu}')
+
+        except:
+            logger.warning('!!! Could not assign DiDo version numbers from dido.yaml')
+
+        # try..except
+    # for
+
+    for col in metadata_data.columns:
+        # only assign values if the column occurs in metadata_data and that column ain't empty
+        if col in metadata.columns and len(str(metadata.loc[0, col])) == 0:
+            logger.debug(f'{col}: {str(metadata.loc[0, col])}')
+            metadata.loc[0, col] = metadata_data.loc[0, col]
+
+        # else not in log file
+        else:
+            logger.debug(f'{col} not assigned')
+
+    # return enhanced metada
+    return metadata
+
+### merge_meta_data_with_odl_data ###
+
+
 def load_supplier_odl(supplier_config: dict, project_name: str, server_config: dict):
     """ add additional information to suppliers data from the database
 
@@ -1511,9 +1562,16 @@ def load_supplier_odl(supplier_config: dict, project_name: str, server_config: d
 
         if key == dc.TAG_TABLE_META:
             # merge the metadata into the dataframe
-            #show_supplier_schemas(suppliers)
+            metadata_data = dc.load_odl_table("bronbestand_bestand_meta_data", server_config)
             df = merge_meta_data_with_description(table_info[dc.TAG_SCHEMA], table_info[dc.TAG_DATA])
+            df = merge_meta_data_with_odl_data(supplier_config, df, metadata_data)
+
+            logger.debug('Final meta data')
+            for i, col in enumerate(df.columns):
+                logger.debug(f'{col}: {df.iloc[0, i]}')
+
             table_info[dc.TAG_DATA] = df
+        # if
 
         # if comment is <odl> fetch it from the ODL
         if table_info['comment'] == '<odl>':
@@ -1521,38 +1579,15 @@ def load_supplier_odl(supplier_config: dict, project_name: str, server_config: d
 
             # info on where to find ODL is hard coded
             comment_df = st.sql_select(
-                            columns = comment,
-                            verbose = False,
-                            sql_server_config = server_config,
-                            )
+                columns = comment,
+                verbose = False,
+                sql_server_config = server_config,
+            )
 
             # Table comment is also stored separately for later use
             table_info['comment'] = comment_df.loc[0, 'obj_description']
 
-        '''
-        # !!! PAS OP tables IS NIET BEKEND, MOET NOG AANGEPAST WORDEN!!!
-        pad = os.path.join(supplier_config['config']['ROOT_DIR'], dc.DIR_DOCS, supplier_id)
-        if len(table_info[dc.TAG_PREFIX]) > 0:
-            logger.info(f'   Loading prefix: {table_info[dc.TAG_PREFIX]}')
-            prefix = os.path.join(pad, table_info[dc.TAG_PREFIX])
-
-            if os.path.exists(prefix):
-                with open(prefix, 'r', encoding="utf8") as infile:
-                    supplier_config['prefix_text'] = infile.read().strip()
-            else:
-                logger.warning(f'!!! Prefix file foes not exist: {prefix}')
-
-        if len(table_info[dc.TAG_SUFFIX]) > 0:
-            logger.info(f'   Loading suffix: {table_info[dc.TAG_SUFFIX]}')
-            suffix = os.path.join(pad, table_info[dc.TAG_SUFFIX])
-
-            if os.path.exists(suffix):
-                with open(suffix, 'r', encoding="utf8") as infile:
-                    supplier_config['suffix_text'] = infile.read().strip()
-            else:
-                logger.warning(f'!!! Suffix file foes not exist: {suffix}')
-        '''
-
+        # if
     # for
 
     logger.info('')
@@ -1736,7 +1771,7 @@ def dido_begin(config_dict: dict):
         bootstrap_data = dc.load_parameters()
 
         # fetch the allowed datatypes from dido.yaml
-        temp, _ = dc.create_data_types() # bootstrap_data['ALLOWED_POSTGRES_TYPES']
+        temp, _ = dc.create_data_types()
         allowed_datatypes = list(temp.keys())
 
         # preprocess and save the schema
@@ -1885,7 +1920,6 @@ def dido_create(config_dict: dict):
 
 def main():
     cpu = time.time()
-    dc.display_dido_header('Creating Tables and Documentation')
 
     # read commandline parameters
     appname, args = dc.read_cli()
@@ -1893,9 +1927,14 @@ def main():
     # read the configuration file
     config = dc.read_config(args.project)
 
+    # print banner
+    dc.display_dido_header('Creating Tables and Documentation', config)
+
+    # create the tables
     dido_begin(config)
     dido_create(config)
 
+    # quit with goodbye message
     cpu = time.time() - cpu
     logger.info('')
     logger.info(f'[Ready {appname["name"]} in {cpu:.0f} seconds]')

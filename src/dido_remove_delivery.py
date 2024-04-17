@@ -37,29 +37,32 @@ def get_info(table_name: str, tables_name: dict, server_config: dict):
            }
 
     # try:
-    result = dc.simple_table.sql_select(table_name = table_name,
-                                    columns = 'count(*)',
-                                    verbose = False,
-                                    sql_server_config = server_config
-                                    )
+    result = st.sql_select(
+        table_name = table_name,
+        columns = 'count(*)',
+        verbose = False,
+        sql_server_config = server_config
+    )
 
     info['records'] = result.iloc[0].loc['count']
     if table_name == tables_name[dc.TAG_TABLE_SCHEMA]:
-        result = dc.simple_table.sql_select(table_name = table_name,
-                                        columns = 'DISTINCT levering_rapportageperiode, count(*) ',
-                                        groupby = 'levering_rapportageperiode order by levering_rapportageperiode',
-                                        verbose = False,
-                                        sql_server_config = server_config
-                                        )
+        result = st.sql_select(
+            table_name = table_name,
+            columns = 'DISTINCT levering_rapportageperiode, count(*) ',
+            groupby = 'levering_rapportageperiode order by levering_rapportageperiode',
+            verbose = False,
+            sql_server_config = server_config
+        )
         if len(result) > 0:
             info['deliveries'] = result
 
     elif table_name == tables_name[dc.TAG_TABLE_DELIVERY]:
-        result = dc.simple_table.sql_select(table_name = table_name,
-                                        columns = 'DISTINCT levering_rapportageperiode',
-                                        verbose = False,
-                                        sql_server_config = server_config
-                                        )
+        result = st.sql_select(
+            table_name = table_name,
+            columns = 'DISTINCT levering_rapportageperiode',
+            verbose = False,
+            sql_server_config = server_config
+        )
 
     # except sqlalchemy.exc.ProgrammingError:
     #     info['table'] = '*** Tabel bestaat niet ***'
@@ -155,13 +158,13 @@ def show_database(title: str, config: dict):
 def dido_remove(header: str):
     cpu = time.time()
 
-    dc.display_dido_header(header)
-
     # read commandline parameters
     appname, args = dc.read_cli()
 
     # read the configuration file
     config_dict = dc.read_config(args.project)
+
+    dc.display_dido_header(header, config_dict)
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
@@ -235,7 +238,7 @@ def dido_remove(header: str):
 
     # while
 
-    # prepare SQL statements and run these thru dc.simple_table
+    # prepare SQL statements and run these thru simple_table
     logger.info(f'leverancier: {leverancier}, leverantie: {leverantie}')
     table_names = dc.get_table_names(project_name, leverancier, 'data')
     for table_name in table_names.keys():
@@ -246,7 +249,7 @@ def dido_remove(header: str):
                   f'WHERE levering_rapportageperiode = \'{leverantie}\'\n' \
                    'RETURNING levering_rapportageperiode;\n'
 
-            result = dc.simple_table.row_count(sql, sql_server_config = data_server_config)
+            result = st.row_count(sql, sql_server_config = data_server_config)
             logger.info(f'{result} records vernietigd for {data_server_config["POSTGRES_SCHEMA"]}.{name}')
     # for
 

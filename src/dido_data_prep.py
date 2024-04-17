@@ -25,7 +25,7 @@ from dido_common import DiDoError
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
-# pylint: pointless-string-statement
+# pylint: disable=pointless-string-statement
 
 # print all columns of dataframe
 pd.set_option('display.max_columns', None)
@@ -174,78 +174,6 @@ def check_kolom(data: pd.DataFrame, schema: pd.DataFrame, kolom: str):
 
 ### check_kolom ###
 
-
-'''
-def test_for_headers(supplier_config: dict,
-                     filename: str,
-                     schema: pd.DataFrame,
-                     extra_list: list,
-                     encoding: str = 'utf-8'
-                    ):
-    """ Check is the data file contains headers and whether the amount of columns are correct
-
-    The number of columns in the data should equal those of the schema minus the
-    number of meta columns from the extra table
-    When it is a mutation data set extra columns are provided for the mutation scheme of
-    the supplier. Should be for corrected as well.
-
-    Args:
-        supplier_config (dict): config dictionary
-        filename (str): File to read data from
-        schema (pd.DataFrame): schema of the data
-        extra_list (list): list with extra columns
-        encoding (str, optional): text encoding. Defaults to 'utf-8'.
-
-    Returns:
-        _type_: _description_
-    """
-
-    # fetch some parameters from the configuration file
-    delimiter = dc.get_par(supplier_config, 'delimiter', ';')
-    delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
-    delivery_mode = dc.get_par(delivery_type, 'mode', 'insert')
-
-    # fetch the mutation instructions when in mutation mode
-    mutation_instr = []
-    if delivery_mode == 'mutate':
-        mutation_instr = dc.get_par(delivery_type, 'mutation_instructions', [])
-
-    first_line_of_data = pd.read_csv(
-        filename,
-        sep = delimiter,
-        dtype = str,
-        keep_default_na = False,
-        nrows = 1,
-        header = None,
-        index_col = None,
-        engine = 'python',
-        encoding = encoding,
-    )
-
-    n_schema_cols = schema.shape[0]
-    n_data_cols = first_line_of_data.shape[1]
-    n_instr_cols = len(mutation_instr)
-    headers_present = 'none'
-
-    if n_schema_cols == n_data_cols - n_instr_cols + len(extra_list):
-        logger.info(f'schema and data have an equal amount of columns: {n_data_cols}')
-
-
-        if not check_kolom(first_line_of_data, schema, 'kolomnaam'):
-            if check_kolom(first_line_of_data, schema, 'leverancier_kolomnaam'):
-                headers_present = 'leverancier_kolomnaam'
-
-    else:
-        logger.error('*** data and schema columns differ:')
-        logger.error(f'schema: {schema.shape}')
-        logger.error(f'data:   {first_line_of_data.shape}')
-
-    # if
-
-    return headers_present
-
-### test_for_headers ###
-'''
 
 def get_bootstrap_data_headers(server_config: dict):
     # Read bootstrap data
@@ -399,7 +327,7 @@ def load_data(supplier_config: dict,
     columns = schema['kolomnaam'].tolist()
 
     # The data is provided raw, without columns and without bronbestand data
-    # To add columns remove the brondbestand columns from the schema kolomnaam
+    # To add columns remove the bronbestand columns from the schema kolomnaam
     # This yields a list of columns which can be added to the data
     extra_columns = get_bootstrap_data_headers(server_config)
     for col in extra_columns:
@@ -524,6 +452,176 @@ def evaluate_headers(data: pd.DataFrame,
 ### evaluate_headers ###
 
 
+def process_strip_space(data: pd.DataFrame,
+                        supplier: str,
+                        schema: pd.DataFrame,
+                        meta: pd.DataFrame,
+                        strip_space: dict,
+                       ):
+    mem = psutil.virtual_memory()
+    seq = 0
+
+    # see if white space strip is defined for supplier
+    strip_cols = strip_space[supplier]
+    if strip_cols == ['*']:
+        strip_cols = data.columns.tolist()
+
+    logger.info('[Stripping white space]')
+
+    # strip white space from designated columns
+    for col in strip_cols:
+        if col in data.columns:
+            pg_col = dc.change_column_name(col)
+            if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
+                elapsed = time.time()
+                #data[col] = data[col].replace({"^\s+|\s+$": ""}, regex = True)
+                data[col] = data[col].str.strip()
+                elapsed = time.time() - elapsed
+                seq += 1
+                logger.info(f'{seq:4d}.  {col} ({elapsed:.0f}s, {mem.used:,} Bytes)')
+
+        else:
+            logger.warning(f'!!! STRIP_SPACE: column {col} not present in the data, ignored.')
+
+        # if
+    # for
+
+    return data
+
+### process_strip_space ###
+
+
+def process_comma_conversion(data: pd.DataFrame,
+                             supplier: str,
+                             schema: pd.DataFrame,
+                             meta: pd.DataFrame,
+                             real_types: list,
+                           ):
+
+    mem = psutil.virtual_memory()
+    cols = schema.index.tolist()
+    seq = 0
+
+    # create a translation table for decimal comma
+    translation_table = str.maketrans({',': '.'})
+    logger.info('')
+    logger.info('[Decimal conversion for column with real and like datatypes]')
+
+    # data_cols = [dc.change_column_name(col) for col in data.columns]
+    for col in data.columns:
+        # if col in data.columns:
+        pg_col = dc.change_column_name(col)
+        if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
+            datatype = schema.loc[pg_col, 'datatype']
+
+            # only convert for Postgres real types
+            if datatype in real_types:
+                elapsed = time.time()
+                data[col] = data[col].str.translate(translation_table)
+                elapsed = time.time() - elapsed
+                seq += 1
+                logger.info(f'{seq:4d}. {col}: {datatype} ({elapsed:.0f}s, {mem.used:,} Bytes)')
+            # if
+        # if
+    # for
+
+    return data
+
+### process_comma_conversion ###
+
+
+def process_renames(data: pd.DataFrame,
+                    supplier: str,
+                    schema: pd.DataFrame,
+                    meta: pd.DataFrame,
+                    renames: dict,
+                   ):
+
+    mem = psutil.virtual_memory()
+    cols = renames[supplier]
+    seq = 0
+
+    if cols is not None: # no renames
+        logger.info('')
+        logger.info('[Renaming data in columns]')
+
+        # Initialize variables used in iteration
+        rename_dict = {}
+        todo_cols = list(cols.keys())
+        rename_cols = []
+
+        logger.info('[Solving datatypes]')
+        # Translate generic data types into corresponding columns
+        for col in todo_cols:
+            new_col = col.strip()
+            if len(new_col) > 1:
+                # test if column name is <datatype>
+                if new_col[0] == '<' and new_col[-1] == '>':
+                    new_col = new_col[1:-1]
+
+                    # collect all columns with that datatype
+                    logger.info('')
+                    logger.info(f'[Columns ascribed to datatype {col}]')
+                    datatypes_found = schema[schema['datatype'] == new_col]
+                    if len(datatypes_found) == 0:
+                        logger.warning(f'!!! None found')
+
+                    # The index of iterrows is kolomnaam
+                    for col_name, row in datatypes_found.iterrows():
+                        # add all columns with this datatype and with the rename
+                        # value to the rename_dict dictionary instead of the
+                        # <datatype> specification
+                        if col_name not in rename_cols and col_name in data.columns:
+                            seq += 1
+                            logger.info(f'{seq:4d}. {col_name}')
+                            rename_dict[col_name] = cols[col]
+
+                        # if
+                    # for
+
+                else:
+                    # "normal" column, add to dictionary
+                    rename_dict[col_name] = cols[col]
+
+                # if
+
+            else:
+                # "normal" column, add to dictionary
+                rename_dict[col_name] = cols[col]
+
+            # if
+        # for
+
+        logger.info('')
+        logger.info('[Renaming]')
+        seq = 0
+        for col, rename_values in rename_dict.items():
+            # if exists: rename data
+            if col in data.columns:
+                if schema.loc[col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
+                    # rename_values = rename_dict[col]
+                    regex = False
+                    if 're' in rename_values.keys():
+                        regex = rename_values['re']
+                        rename_values.pop('re')
+
+                    elapsed = time.time()
+                    data[col] = data[col].replace(rename_values, regex = regex)
+                    elapsed = time.time() - elapsed
+                    seq += 1
+                    logger.info(f'{seq:4d}. {col} ({elapsed:.0f}s, {mem.used:,} Bytes)')
+
+            else:
+                logger.warning(f'!!! Column to rename "{col}" does not exist, ignored.')
+
+            # if
+        # for
+    # if
+
+    return data
+
+### process_renames ###
+
 def process_data(data: pd.DataFrame,
                  supplier: str,
                  schema: pd.DataFrame,
@@ -542,32 +640,14 @@ def process_data(data: pd.DataFrame,
     # strip space left and right
     if strip_space is not None and supplier in strip_space.keys():
         cpu = time.time()
-        seq = 0
 
-        # see if white space strip is defined for supplier
-        strip_cols = strip_space[supplier]
-        if strip_cols == ['*']:
-            strip_cols = data.columns.tolist()
-
-        logger.info('[Stripping white space]')
-
-        # strip white space from designated columns
-        for col in strip_cols:
-            if col in data.columns:
-                pg_col = dc.change_column_name(col)
-                if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
-                    elapsed = time.time()
-                    #data[col] = data[col].replace({"^\s+|\s+$": ""}, regex = True)
-                    data[col] = data[col].str.strip()
-                    elapsed = time.time() - elapsed
-                    seq += 1
-                    logger.info(f'{seq:4d}.  {col} ({elapsed:.0f}s, {mem.used:,} Bytes)')
-
-            else:
-                logger.warning(f'!!! STRIP_SPACE: column {col} not present in the data, ignored.')
-
-            # if
-        # for
+        data = process_strip_space(
+            data = data,
+            supplier = supplier,
+            schema = schema,
+            meta = meta,
+            strip_space = strip_space,
+        )
 
         cpu = time.time() - cpu
         logger.info(f'{len(data)} records stripped from whitespace in {cpu:.0f} seconds')
@@ -582,32 +662,15 @@ def process_data(data: pd.DataFrame,
 
     # only convert decimal commas when specified in meta data
     if decimaal_teken != '.':
-        cols = schema.index.tolist()
         cpu = time.time()
-        seq = 0
 
-        # create a translation table for decimal comma
-        translation_table = str.maketrans({',': '.'})
-        logger.info('')
-        logger.info('[Decimal conversion for column with real and like datatypes]')
-
-        # data_cols = [dc.change_column_name(col) for col in data.columns]
-        for col in data.columns:
-            # if col in data.columns:
-            pg_col = dc.change_column_name(col)
-            if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
-                datatype = schema.loc[pg_col, 'datatype']
-
-                # only convert for Postgres real types
-                if datatype in real_types:
-                    elapsed = time.time()
-                    data[col] = data[col].str.translate(translation_table)
-                    elapsed = time.time() - elapsed
-                    seq += 1
-                    logger.info(f'{seq:4d}. {col}: {datatype} ({elapsed:.0f}s, {mem.used:,} Bytes)')
-                # if
-            # if
-        # for
+        data = process_comma_conversion(
+            data = data,
+            supplier = supplier,
+            schema = schema,
+            meta = meta,
+            real_types = real_types,
+        )
 
         cpu = time.time() - cpu
         logger.info(f'{len(data)} records processed for decimal points in {cpu:.0f} seconds')
@@ -620,85 +683,14 @@ def process_data(data: pd.DataFrame,
     # rename data
     if renames is not None and supplier in renames.keys():
         cpu = time.time()
-        cols = renames[supplier]
-        seq = 0
 
-        if cols is not None: # no renames
-            logger.info('')
-            logger.info('[Renaming data in columns]')
-
-            # Initialize variables used in iteration
-            rename_dict = {}
-            todo_cols = list(cols.keys())
-            rename_cols = []
-
-            logger.info('[Solving datatypes]')
-            # Translate generic data types into corresponding columns
-            for col in todo_cols:
-                new_col = col.strip()
-                if len(new_col) > 1:
-                    # test if column name is <datatype>
-                    if new_col[0] == '<' and new_col[-1] == '>':
-                        new_col = new_col[1:-1]
-
-                        # collect all columns with that datatype
-                        logger.info('')
-                        logger.info(f'[Columns ascribed to datatype {col}]')
-                        datatypes_found = schema[schema['datatype'] == new_col]
-                        if len(datatypes_found) == 0:
-                            logger.warning(f'!!! None found')
-
-                        # The index of iterrows is kolomnaam
-                        for col_name, row in datatypes_found.iterrows():
-                            # add all columns with this datatype and with the rename
-                            # value to the rename_dict dictionary instead of the
-                            # <datatype> specification
-                            if col_name not in rename_cols and col_name in data.columns:
-                                seq += 1
-                                logger.info(f'{seq:4d}. {col_name}')
-                                rename_dict[col_name] = cols[col]
-
-                            # if
-                        # for
-
-                    else:
-                        # "normal" column, add to dictionary
-                        rename_dict[col_name] = cols[col]
-
-                    # if
-
-                else:
-                    # "normal" column, add to dictionary
-                    rename_dict[col_name] = cols[col]
-
-                # if
-            # for
-
-            logger.info('')
-            logger.info('[Renaming]')
-            seq = 0
-            for col, rename_values in rename_dict.items():
-                # if exists: rename data
-                if col in data.columns:
-                    if schema.loc[col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
-                        # rename_values = rename_dict[col]
-                        regex = False
-                        if 're' in rename_values.keys():
-                            regex = rename_values['re']
-                            rename_values.pop('re')
-
-                        elapsed = time.time()
-                        data[col] = data[col].replace(rename_values, regex = regex)
-                        elapsed = time.time() - elapsed
-                        seq += 1
-                        logger.info(f'{seq:4d}. {col} ({elapsed:.0f}s, {mem.used:,} Bytes)')
-
-                else:
-                    logger.warning(f'!!! Column to rename "{col}" does not exist, ignored.')
-
-                # if
-            # for
-        # if
+        data = process_renames(
+            data = data,
+            supplier = supplier,
+            schema = schema,
+            meta = meta,
+            renames = renames,
+        )
 
         cpu = time.time() - cpu
         logger.info(f'{len(data)} records renamed in {cpu:.0f} seconds')
@@ -998,13 +990,13 @@ def prepare_one_delivery(cargo: dict,
 def dido_data_prep(header: str):
     cpu = time.time()
 
-    dc.display_dido_header(header)
-
     # read commandline parameters
     appname, args = dc.read_cli()
 
     # read the configuration file
     config_dict = dc.read_config(args.project)
+    dc.display_dido_header(header, config_dict)
+
     delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], args.delivery)
 
     # get project environment

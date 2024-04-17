@@ -15,6 +15,10 @@ import simple_table as st
 
 from dido_common import DiDoError
 
+# pylint: disable=bare-except, line-too-long, consider-using-enumerate
+# pylint: disable=logging-fstring-interpolation, too-many-locals
+# pylint: disable=pointless-string-statement
+
 # show all columns of dataframe
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
@@ -72,9 +76,11 @@ def check_null_iter(data: pd.DataFrame,
     if 'NOT NULL' in schema.loc[column, 'constraints']:
         col_index = data.columns.get_loc(column)
 
+        # print('++report++\n', report)
+        # print('++row++', report.iloc[0].loc['check_null'])
         for row in range(len(data)):
             # test if an error was already reported, further checks are not very useful
-            if report.iloc[row][column] != 0:
+            if len(report) < 1 or report.iloc[row][column] != 0:
                 continue
 
             value = data.iloc[row][column]
@@ -94,7 +100,8 @@ def check_null_iter(data: pd.DataFrame,
         # for
 
         if total_errors > max_errors:
-            raise DiDoError(f'Maximum number of check errors {max_errors} exceeded. Checking of errors stopped')
+            raise DiDoError(f'Maximum number of check_null_iter errors {max_errors} '
+                            f'exceeded for column {column}. Checking of errors stopped')
 
     # if
 
@@ -160,7 +167,8 @@ def check_type(data: pd.DataFrame,
     # if
 
     if total_errors > max_errors:
-        raise DiDoError(f'Maximum number of check errors {max_errors} exceeded. Checking of errors stopped')
+        raise DiDoError(f'Maximum number of check_type errors {max_errors} '
+                        f'exceeded for column {column}. Checking of errors stopped')
 
     return report, total_errors
 
@@ -253,8 +261,8 @@ def check_domain_list(data: pd.DataFrame,
 
     for row in range(len(data)):
         # test if an error was already reported, further checks are not very useful
-        if report.iloc[row][column] != 0:
-            continue
+        # if report.iloc[row][column] != 0:
+        #     continue
 
         # get the values
         values = data.iloc[row][column].strip()
@@ -273,7 +281,6 @@ def check_domain_list(data: pd.DataFrame,
                 total_errors += 1
                 report = add_error( # reate dataframe with dtypes
                     report = report,
-                    # mess = messages,
                     row = row,
                     col = col_index,
                     col_name = column,
@@ -282,7 +289,8 @@ def check_domain_list(data: pd.DataFrame,
                 )
 
         if total_errors > max_errors:
-            raise DiDoError(f'Maximum number of check errors {max_errors} exceeded. Checking of errors stopped')
+            raise DiDoError(f'Maximum number of check_domain_list errors {max_errors} '
+                            f'exceeded for column {column}. Checking of errors stopped')
 
     return report, total_errors
 
@@ -299,7 +307,25 @@ def check_domain_minmax(
     column: str,
     domain: str
 ):
-    """"""
+    """_summary_
+
+    Args:
+        data (pd.DataFrame): _description_
+        schema (pd.DataFrame): _description_
+        report (pd.DataFrame): _description_
+        max_errors (int): _description_
+        total_errors (int): _description_
+        report_code (int): _description_
+        column (str): _description_
+        domain (str): _description_
+
+    Raises:
+        ValueError: _description_
+        DiDoError: _description_
+
+    Returns:
+        _type_: _description_
+    """
     may_be_null: bool = 'NOT NULL' not in schema.loc[column, 'constraints']
     data_type = schema.loc[column, 'datatype'].lower()
     mins, maxs = domain.split(':')
@@ -333,7 +359,7 @@ def check_domain_minmax(
             if not min_val <= value <= max_val:
                 raise ValueError
 
-        except:
+        except Exception:
             total_errors += 1
             report = add_error(
                 report = report,
@@ -361,9 +387,26 @@ def check_domain_minmax_2(
     column: str,
     domain: str
 ):
-    """"""
-    may_be_null: bool = 'NOT NULL' not in schema.loc[column, 'constraints']
-    data_type = schema.loc[column, 'datatype'].lower()
+    """ Check if variables are in thev range [min..max]
+
+    Args:
+        data (pd.DataFrame): data frame
+        schema (pd.DataFrame): data description
+        report (pd.DataFrame): current report (to be appended)
+        max_errors (int): maximum number of errors at which the routine stops
+        total_errors (int): number of errors detected
+        report_code (int): report code of errors detected by this routine
+        column (str): column to examine
+        domain (str): Domain codedido fatal error
+
+    Raises:
+        DiDoError: is raised when total_numebers > max_errors
+
+    Returns:
+        pd.DataFrame, int: updated dataframe with errors, updated number of total errors
+    """
+    # may_be_null: bool = 'NOT NULL' not in schema.loc[column, 'constraints']
+    # data_type = schema.loc[column, 'datatype'].lower()
     mins, maxs = domain.split(':')
     min_val, max_val = float(mins), float(maxs)
 
@@ -405,9 +448,12 @@ def check_domain_minmax_2(
             )
 
     if total_errors > max_errors:
-        raise DiDoError(f'Maximum number of check errors {max_errors} exceeded. Checking of errors stopped')
+        raise DiDoError(f'Maximum number of check_domain_minmax_2 errors {max_errors} '
+                        f'exceeded for column {column}. Checking of errors stopped')
 
     return report, total_errors
+
+### check_domain_minmax_2 ###
 
 
 def check_domain_re(data: pd.DataFrame,
@@ -419,7 +465,24 @@ def check_domain_re(data: pd.DataFrame,
                     column: str,
                     domain: str
                    ):
-    """"""
+    """ Domain check with regular expression
+
+    Args:
+        data (pd.DataFrame): data frame
+        schema (pd.DataFrame): schema description
+        report (pd.DataFrame): current report (to be appended)
+        max_errors (int): maximum number of errors at which the routine stops
+        total_errors (int): number of errors detected
+        report_code (int): report code of errors detected by this routine
+        column (str): column to examine
+        domain (str): Domain code
+
+    Raises:
+        DiDoError: is raised when total_numebers > max_errors
+
+    Returns:
+        pd.DataFrame, int: updated dataframe with errors, updated number of total errors
+    """
     may_be_null = 'NOT NULL' not in schema.loc[column, 'constraints']
     pattern = re.compile(domain.strip())
     col_index = data.columns.get_loc(column)
@@ -447,7 +510,8 @@ def check_domain_re(data: pd.DataFrame,
             )
 
         if total_errors > max_errors:
-            raise DiDoError(f'Maximum number of check errors {max_errors} exceeded. Checking of errors stopped')
+            raise DiDoError(f'Maximum number of check_domain_re errors {max_errors} '
+                            f'exceeded for column {column}. Checking of errors stopped')
 
     return report, total_errors
 
@@ -460,7 +524,21 @@ def check_domain(data: pd.DataFrame,
                  max_errors: int,
                  total_errors: int,
                 ):
-    """"""
+    """ Domain check
+
+    Args:
+        data (pd.DataFrame): data frame
+        schema (pd.DataFrame): schema description
+        report (pd.DataFrame): current report (to be appended)
+        max_errors (int): maximum number of errors at which the routine stops
+        total_errors (int): number of errors detected
+
+    Raises:
+        DiDoError: is raised when total_numebers > max_errors
+
+    Returns:
+        pd.DataFrame, int: updated dataframe with errors, updated number of total errors
+    """
     cpu = time.time()
 
     for col in data.columns:
@@ -473,7 +551,7 @@ def check_domain(data: pd.DataFrame,
                     schema = schema,
                     report = report,
                     max_errors = max_errors,
-                    total_error = total_errors,
+                    total_errors = total_errors,
                     report_code = dc.VALUE_NOT_IN_LIST,
                     column = col,
                     domain = domain,
@@ -543,7 +621,8 @@ def check_constraints(data: pd.DataFrame,
         )
 
         if total_errors > max_errors:
-            raise DiDoError(f'Maximum number of check errors {max_errors} exceeded. Checking of errors stopped')
+            raise DiDoError(f'Maximum number of check_constraints errors {max_errors} exceeded '
+                            f'for column {col}. Checking of errors stopped')
 
     cpu = time.time() - cpu
     logger.info(f'Checking for NON NULL - errors: {total_errors} CPU: {cpu:.2f} data: [{len(data)}, {len(data.columns)}]')
@@ -887,13 +966,15 @@ def create_schema_sql(data: pd.DataFrame,
     sub_types = supplier_config['config']['PARAMETERS']['SUB_TYPES']
     numerics = sub_types['integer'] + sub_types['real'] + sub_types['date'] + sub_types['timestamp']
 
-    # build a list with all numeric  column names. These should be forced to NULL when field is empty
+    # build a list with all numeric column names of the data.
+    # These should be forced to NULL when field is empty.
+    # ODL overhead must be omitted.
     numeric_cols = ''
-    for i in range(len(schema)):
-        if schema.iloc[i].loc['leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
-            col_type = schema.iloc[i].loc['datatype']
+    for col_name, row in schema.iterrows():
+        if col_name not in extra_cols:
+            col_type = row['datatype']
             if col_type in numerics:
-                col_name = schema.index[i] # iloc[i].loc['kolomnaam']
+                #col_name = schema.index[i] # iloc[i].loc['kolomnaam']
                 numeric_cols += col_name + ', '
 
     # if the list of numeric columns, create a force_null addition for the csv
@@ -1588,7 +1669,14 @@ def prepare_delivery_note(meta_data: pd.DataFrame,
 
     # Check code_bronbestand
     code_bronbestand = meta_data.iloc[0].loc[dc.ODL_CODE_BRONBESTAND]
-    code_sourcefile = supplier_config[dc.ODL_CODE_BRONBESTAND]
+    try:
+        code_sourcefile = supplier_config[dc.ODL_CODE_BRONBESTAND]
+
+    except KeyError:
+        raise DiDoError(f'There is no "{dc.ODL_CODE_BRONBESTAND}" in the delivery.yaml file')
+
+    # try..except
+
     if code_sourcefile != code_bronbestand:
         logger.error(f'*** "{dc.ODL_CODE_BRONBESTAND}" "{code_sourcefile}" does not match definition: "{code_bronbestand}"')
         critical = True
@@ -2089,13 +2177,13 @@ def process_file(filename: str,
 def dido_import(header: str):
     cpu = time.time()
 
-    dc.display_dido_header(header)
-
     # read commandline parameters
     appname, args = dc.read_cli()
 
     # read the configuration file
     config_dict = dc.read_config(args.project)
+    dc.display_dido_header(header, config_dict)
+
     delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], args.delivery)
     overwrite = dc.get_par(delivery_config, 'ENFORCE_IMPORT_IF_TABLE_EXISTS', False)
 

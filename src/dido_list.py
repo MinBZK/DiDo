@@ -185,13 +185,13 @@ def dido_list(header: str = None):
     logger = logging.getLogger()
 
     logger.info('')
-    dc.display_dido_header(header)
 
     # read commandline parameters
     appname, args = dc.read_cli()
 
     # read the configuration file
     config_dict = dc.read_config(args.project)
+    dc.display_dido_header(header, config_dict)
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
@@ -247,4 +247,4 @@ if __name__ == '__main__':
     logger = dc.create_log(log_file, level = 'DEBUG')
 
     # go
-    dido_list('Removing a delivery')
+    dido_list('Listing suppliers')

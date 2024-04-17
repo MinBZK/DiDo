@@ -1,0 +1,46 @@
+### Parameters for dido-data-prep
+DELIVERIES:
+  dido_test:
+    delivery_2023-Q2:
+      code_bronbestand: DIDO_TEST
+      levering_leveringsdatum: 2024-02-29
+      data_file: test_data.csv
+      data_check: yes
+      origin:
+        input: <file>
+
+SUPPLIERS_TO_PROCESS: ['*']
+
+# Indicate whether supplu contains header row or not
+HEADERS:
+  dido_test: yes
+
+# Rename data on column base
+# Conversies voor ikb_jopi: ontbrekende datums worden aangegeven door 0(0000000)
+# In DWH is de conventie 29991231
+# Niet nodig voor vertaaltabel
+RENAME_DATA:
+  dido_test:
+    <date>:    {"00000000":"99991231", "0": "99991231"}
+    <numeric>: {"re": True, "(.*)-": "-\\1"}
+    <integer>: {"re": True, "(.*)-": "-\\1"}
+
+# Definieer de kolommen waarvan de de spaties links en rechts moeten worden gestript
+# voor iedere cel. Geef kolommen op als lijst:
+#  - [] lege lijst: niets wordt gestript
+#  - ['*']: alle kolommen worden gestript
+#  - ['a', 'b', 'd']: kolommen a, b, d worden gestript
+STRIP_SPACE:
+  dido_test: ['*']
+
+### Parameters for dido-import
+# LIMITATIONS faciliteert het instellen van limieten zodat getest kan worden op
+# een beperkte hoeveelheid data of dat afgebroken wordt als er teveel fouten zijn gedetekteerd
+LIMITS:
+  max_rows: 1_000 # <1 = read all rows
+  max_errors: 1_000
+
+SNAPSHOTS:
+  zip: yes
+  destroy_todo: yes
+

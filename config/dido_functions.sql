@@ -16,4 +16,3 @@ $body$
     WHERE {key_id} = id;
 $body$
 LANGUAGE SQL;
-

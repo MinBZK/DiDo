@@ -1,0 +1,10 @@
+test_id;col_boolean;col_integer;col_decimal;col_date;check_null;check_minmax;check_list_numeric;check_list_text;check_re
+1;yes;1-;1-;20241231;q;3-;3.14;q;
+2;no;2-;2-;45657;w;2-;3;w;
+3;true;3-;1.0-;00000000;e;-1;2;e;
+4;True;4-;2.;561012;r;0;1;r;
+5;false;1.0;.2-;0;t;1;-1;t;
+6;waar;1.6;3.14-;Yyyy-mm-dd;y;2;-2;y;
+7;onwaar;a;3.4e+4;x.y.z;u;3;3-;u;
+8;fout;b;-4.5;;;4;0;i;
+9;erg fout;col_integer;-4.5E-03;1957-2-29;o;5;0;o;

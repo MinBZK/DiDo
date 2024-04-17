@@ -1,0 +1,18 @@
+attribuut;waarde
+code_bronbestand_sleutel;DIDO
+code_bronbestand;DIDO_TEST
+bronbestand_beschrijving;algemeen test procedures
+bronbestand_naamconventie;
+bronbestand_leverancier;dwhteam
+bronbestand_formaat;csv
+bronbestand_decimaal;.
+bronbestand_frequentielevering;
+bronbestand_aantal_attributen;16
+bronbestand_gemiddeld_aantal_records;3
+bronbestand_voorlooprecord;No
+bronbestand_sluitrecord;No
+bronbestand_expiratie_datum;9999-12-31
+bronbestand_datum_begin;2022-01-01
+bronbestand_datum_einde;9999-12-31
+sysdatum;2024-04-09 09:14:49 
+created_by;current_user
