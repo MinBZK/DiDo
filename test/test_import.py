@@ -37,11 +37,11 @@ def test_check_null_iter():
         filename = supplier_data['delivery-1']['data_file']
         pad, fn, ext = dc.split_filename(filename)
         filename = fn + ext
-        
+
         data_filename = os.path.join(todo_dir, filename)
         data = pd.read_csv(data_filename, sep = '\s*;\s*', dtype = str, keep_default_na = False, engine = 'python')
         data.columns = [dc.change_column_name(col) for col in data.columns]
-        
+
         schema_name = f'{project_name}_{leverancier}_{TAG_TABLE_SCHEMA}_description'
         supplier_schema = load_schema(schema_name, data_server_config)
         supplier_schema = supplier_schema.set_index('kolomnaam')
@@ -58,7 +58,7 @@ def test_check_null_iter():
                     print(data.iloc[row][col])
                     if (data.iloc[row][col]).strip() == '':
                         err += 1
-            report, total_errors = dido_import.check_null_iter(data,supplier_schema, report,  max_errors,total_errors, VALUE_MANDATORY_NOT_SPECIFIED, col)            
+            report, total_errors = dido_import.check_null_iter(data,supplier_schema, report,  max_errors,total_errors, VALUE_MANDATORY_NOT_SPECIFIED, col)
 
         assert total_errors == err
 
@@ -91,14 +91,14 @@ def test_check_boolean_type():
             if data_type == 'boolean':
                 for row in range(len(data)):
                     print(data.iloc[row][col])
-                    if ((data.iloc[row][col]).strip() not in bool_vals and supplier_schema.loc[col, 'constraints'] != 'NOT NULL' 
+                    if ((data.iloc[row][col]).strip() not in bool_vals and supplier_schema.loc[col, 'constraints'] != 'NOT NULL'
                         and (data.iloc[row][col]).strip() != ''):
                         err += 1
 
-                        
+
                     #report, messages, total_errors = dido_import.check_boolean_type(data,supplier_schema, report, messages, total_errors, VALUE_WRONG_DATATYPE, col)
 
-        assert total_errors == err 
+        assert total_errors == err
 
 
 def test_check_integer_type():
@@ -116,7 +116,7 @@ def test_check_integer_type():
         data.columns = [common.change_column_name(col) for col in data.columns]
 
         schema_name = f'{project_name}_{leverancier}_{TAG_TABLE_SCHEMA}_description'
- 
+
         supplier_schema = load_schema(schema_name, data_server_config)
         supplier_schema = supplier_schema.set_index('kolomnaam')
 
@@ -130,10 +130,10 @@ def test_check_integer_type():
             if data_type in ['integer', 'bigint']:
                 for row in range(len(data)):
                     value= (data.iloc[row][col]).strip()
-                    if (supplier_schema.loc[col, 'constraints'] != 'NOT NULL' 
+                    if (supplier_schema.loc[col, 'constraints'] != 'NOT NULL'
                         and (value != '')):
                         try:
-                            int(str(value)) 
+                            int(str(value))
                         except ValueError:
                             err += 1
                         #report, messages, total_errors = dido_import.check_boolean_type(data,supplier_schema, report, messages, total_errors, VALUE_WRONG_DATATYPE, col)
@@ -168,11 +168,10 @@ def test_check_decimal_type():
             if data_type in ['numeric', 'real', 'double']:
                 for row in range(len(data)):
                     value= (data.iloc[row][col]).strip()
-                    if (supplier_schema.loc[col, 'constraints'] != 'NOT NULL' 
+                    if (supplier_schema.loc[col, 'constraints'] != 'NOT NULL'
                         and (value != '')):
                         try:
-                            float(str(value)) 
+                            float(str(value))
                         except ValueError:
                             err += 1
     assert total_errors == err
-    

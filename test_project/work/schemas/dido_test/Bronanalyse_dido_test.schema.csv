@@ -1,0 +1,17 @@
+kolomnaam;code_attribuut_sleutel;code_attribuut;code_bronbestand;leverancier_kolomnaam;leverancier_kolomtype;leverancier_info_1;leverancier_info_2;datatype;keytype;constraints;domein;verstek;positie;avg_classificatie;veiligheid_classificatie;gebruiker_info_1;gebruiker_info_2;gebruiker_info_3;kolom_expiratie_datum;attribuut_datum_begin;attribuut_datum_einde;beschrijving
+bronbestand_recordnummer;DIDO_TEST001;001;DIDO_TEST;(dido generated);;;;bigserial;;;;;1;1;1;;;;;2022-01-01;9999-12-31;Uniek recordnummer in de tabel
+code_bronbestand;DIDO_TEST002;002;DIDO_TEST;(dido generated);;;;text;;DEFAULT 'DIDO_TEST';;;2;1;1;;;;;2022-01-01;9999-12-31;Unieke code voor identificatie van bronbestanden
+levering_rapportageperiode;DIDO_TEST003;003;DIDO_TEST;(dido generated);;;;text;;DEFAULT '';;;3;1;1;;;;;2022-01-01;9999-12-31;De frekwentie waarmee de bronbestanden worden geleverd (bijvoorbeeld jaarlijks of wekelijks)
+record_datum_begin;DIDO_TEST004;004;DIDO_TEST;(dido generated);;;;date;;DEFAULT '1970-01-01';;;4;1;1;;;;;2022-01-01;9999-12-31;Eerste geldigheidsdatum en tijd van dit record
+record_datum_einde;DIDO_TEST005;005;DIDO_TEST;(dido generated);;;;date;;DEFAULT '9999-12-31';;;5;1;1;;;;;2022-01-01;9999-12-31;Laatste geldigheidsdatum en tijd van dit record
+sysdatum;DIDO_TEST006;006;DIDO_TEST;(dido generated);;;;timestamp;;DEFAULT CURRENT_TIMESTAMP(0);;;6;1;1;;;;;2022-01-01;9999-12-31;De datum waarop dit record is aangemaakt
+test_id;DIDO_TEST007;007;DIDO_TEST;/TEST/ID;NUMC;;;integer;;;;;7;1;1;;;;;2022-01-01;9999-12-31;SerialId
+col_boolean;DIDO_TEST008;008;DIDO_TEST;/COL/BOOLEAN;CHAR;;;text;;;['','true','false'];;8;1;1;;;;;2022-01-01;9999-12-31;Check Boolean Type
+col_integer;DIDO_TEST009;009;DIDO_TEST;/COL/INTEGER;NUMC;;;integer;;;1:100;;9;1;1;;;;;2022-01-01;9999-12-31;Check Integer Type
+col_decimal;DIDO_TEST010;010;DIDO_TEST;/COL/DECIMAL;NUMC;;;numeric;;;;;10;1;1;;;;;2022-01-01;9999-12-31;Check Decimal Type
+col_date;DIDO_TEST011;011;DIDO_TEST;/COL/DATE;DATS;;;date;;;;;11;1;1;;;;;2022-01-01;9999-12-31;Check Date Type
+check_null;DIDO_TEST012;012;DIDO_TEST;/CHECK/NULL;CHAR;;;text;;NOT NULL;;;12;1;1;;;;;2022-01-01;9999-12-31;Check Null
+check_minmax;DIDO_TEST013;013;DIDO_TEST;CHECK/MINMAX;NUMC;;;numeric;;;[1:7];;13;1;1;;;;;2022-01-01;9999-12-31;Check Min Max
+check_list_numeric;DIDO_TEST014;014;DIDO_TEST;CHECK/LIST/NUMERIC;NUMC;;;numeric;;;[3,5,7,9];;14;1;1;;;;;2022-01-01;9999-12-31;Check List Numeric values
+check_list_text;DIDO_TEST015;015;DIDO_TEST;CHECK/LIST/TEXT;CHAR;;;text;;;['ABC','DEF','XYZ','KLM','ASML',];;15;1;1;;;;;2022-01-01;9999-12-31;Check List Text values
+check_re;DIDO_TEST016;016;DIDO_TEST;/CHECK/RE;CHAR;;;text;;;;;16;2;2;;;;;2022-01-01;9999-12-31;Check Regular Expression
