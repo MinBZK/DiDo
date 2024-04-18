@@ -17,7 +17,6 @@ import shutil
 import pandas as pd
 
 from datetime import datetime
-from requests.auth import HTTPBasicAuth
 
 # Don't forget to set PYTHONPATH to your python library files
 # export PYTHONPATH=/path/to/dido/helpers/map
@@ -32,7 +31,7 @@ from dido_list import dido_list
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
-# pylint: disable=pointless-string-statement, logging-fstring-interpolation
+# pylint: disable=pointless-string-statement, logging-fstring-interpolation, line-too-long
 
 #######################################################################################################################
 #
@@ -41,12 +40,25 @@ pd.set_option('display.width', 1000)
 #######################################################################################################################
 
 
-def fetch_schema_from_table(table_name, sql_server_config: dict) -> pd.DataFrame:
-    result = st.get_structure(table_name,
-                                        verbose = False,
-                                        sql_server_config = sql_server_config,
-                                       )
+def fetch_schema_from_table(table_name: str, sql_server_config: dict) -> pd.DataFrame:
+    """ fetch a schema from the database
+
+    Args:
+        table_name (str): name of the table to fetch
+        sql_server_config (dict): server information
+
+    Returns:
+        pd.DataFrame: the fetched table as a Pandas DataFrame
+    """
+    result = st.get_structure(
+        table_name,
+        verbose = False,
+        sql_server_config = sql_server_config,
+    )
+
     return result
+
+### fetch_schema_from_table ###
 
 
 def merge_bootstrap_data(schema: pd.DataFrame, table_name: str, server_config: dict) -> pd.DataFrame:
@@ -118,6 +130,8 @@ def substitute_vars(
     # for
 
     return schema
+
+### substitute_vars ###
 
 
 def apply_schema_odl(template: pd.DataFrame,
@@ -615,7 +629,7 @@ def merge_table_and_schema(table: pd.DataFrame, schema: pd.DataFrame) -> pd.Data
 
 
 def write_markdown_doc(outfile: object, supplier_config: dict, columns_to_write: list):
-    """_summary_
+    """ Write markdown documentation
 
     Args:
         outfile (object): file to write documentation to
@@ -624,18 +638,41 @@ def write_markdown_doc(outfile: object, supplier_config: dict, columns_to_write:
         columns_to_write (list): columns to add into documentation
     """
     supplier_id = supplier_config['supplier_id']
+    project_name = supplier_config['config']['PROJECT_NAME']
 
     # get the meta and schema dataframe
     schema = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_SCHEMA]
     # meta = suppliers[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_SCHEMA]
+    odl_server_config = supplier_config['config']['SERVER_CONFIGS']['ODL_SERVER_CONFIG']
+    odl_meta_data = dc.load_odl_table(
+        table_name = 'bronbestand_bestand_meta_data',
+        server_config = odl_server_config,
+    )
 
     # Get the optional data dataframe
     data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_DATA]
     if not isinstance(data, pd.DataFrame):
         data = None
 
+    # get version info
+    major_odl = odl_meta_data.loc[0, 'odl_version_major']
+    minor_odl = odl_meta_data.loc[0, 'odl_version_minor']
+    patch_odl = odl_meta_data.loc[0, 'odl_version_patch']
+    odl_date = odl_meta_data.loc[0, 'odl_version_patch_date']
+    major_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_MAJOR']
+    minor_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_MINOR']
+    patch_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_PATCH']
+    dido_date = odl_meta_data.loc[0, 'dido_version_patch_date']
+
+    # get today
+    nu = datetime.now().strftime(dc.DATETIME_FORMAT)
+
     # write name of table or view
-    outfile.write(f"# **Tabel: {supplier_id}**\n\n")
+    outfile.write(f"# **Tabel: {supplier_id}: {project_name}**\n\n")
+
+    outfile.write(f'This document was created at {nu}  \n')
+    outfile.write(f'Created by DiDo version: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n')
+    outfile.write(f'With ODL version: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n')
 
     prefix_text_label = f'{dc.TAG_PREFIX}_text'
     if prefix_text_label in supplier_config.keys() and len(supplier_config[prefix_text_label]) > 0:
@@ -751,7 +788,7 @@ def write_markdown_doc(outfile: object, supplier_config: dict, columns_to_write:
 
 ### write_markdown_doc ###
 
-
+'''
 def write_documentation(filename: str, suppliers: dict, columns_to_write: list):
     """ The documentation is written in markdown format with a __TOC__
     header for the Gitlab wiki.
@@ -778,7 +815,7 @@ def write_documentation(filename: str, suppliers: dict, columns_to_write: list):
     return
 
 ### write_documentation ###
-
+'''
 
 def write_sql(project_name: str,
               outfile: object,
