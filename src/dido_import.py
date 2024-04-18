@@ -707,6 +707,7 @@ def check_all(data, schema, supplier_config, max_errors):
 def create_markdown(report: pd.DataFrame,
                     pakbon_record: pd.DataFrame,
                     project_name: str,
+                    supplier_config: dict,
                     supplier_id: str,
                     report_file: object,
                     filename: str
@@ -723,7 +724,15 @@ def create_markdown(report: pd.DataFrame,
     pad, fn, ext = dc.split_filename(filename)
     rapportageperiode = pakbon_record.iloc[0].loc[dc.ODL_LEVERING_FREK]
 
-    md = create_markdown_report(report, rapportageperiode, project_name, supplier_id, fn)
+    md = create_markdown_report(
+        report = report,
+        rapportageperiode = rapportageperiode,
+        project_name = project_name,
+        supplier_config = supplier_config,
+        supplier_id = supplier_id,
+        filename = fn,
+    )
+
     report_file.write(md)
     with open(filename, 'w', encoding="utf8") as outfile:
         outfile.write(md)
@@ -735,9 +744,10 @@ def create_markdown(report: pd.DataFrame,
 
 def create_markdown_report(report:pd.DataFrame,
                            rapportageperiode: str,
-                           project_name:str,
-                           supplier_id:str,
-                           filename:str
+                           project_name: str,
+                           supplier_config: dict,
+                           supplier_id: str,
+                           filename: str
                           ) -> str:
     """ Generate a string from the error report
 
@@ -750,12 +760,28 @@ def create_markdown_report(report:pd.DataFrame,
     Returns:
         str: markdown string of the error report
     """
-    # nw = datetime.now()
-    # today = f'{nw.year}-{nw.month:02d}-{nw.day:02d} {nw.hour}:{nw.minute:02d}:{nw.second:02d}'
-    # today = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    md = f'# Project: {project_name}\n## Leverancier: {supplier_id}\n### Foutrapportage voor: {filename}\n\n'
-    md += f'Levering voor rapportageperiode: {rapportageperiode}\n'
-    md += f'Report at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+    # get version info
+    odl_server_config = supplier_config['config']['SERVER_CONFIGS']['ODL_SERVER_CONFIG']
+    odl_meta_data = dc.load_odl_table(
+        table_name = 'bronbestand_bestand_meta_data',
+        server_config = odl_server_config,
+    )
+
+    major_odl = odl_meta_data.loc[0, 'odl_version_major']
+    minor_odl = odl_meta_data.loc[0, 'odl_version_minor']
+    patch_odl = odl_meta_data.loc[0, 'odl_version_patch']
+    odl_date = odl_meta_data.loc[0, 'odl_version_patch_date']
+    major_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_MAJOR']
+    minor_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_MINOR']
+    patch_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_PATCH']
+    dido_date = odl_meta_data.loc[0, 'dido_version_patch_date']
+
+    md = f'# Project: {project_name}\n## Leverancier: {supplier_id}\n'
+    md += f'### Levering voor rapportageperiode: {rapportageperiode}  \n'
+    md += f'Data ingelezen van file: {filename}  \n\n'
+    md += f'Tijdstip van inlezen: {datetime.now().strftime(dc.DATETIME_FORMAT)}  \n'
+    md += f'DiDo versie: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n'
+    md += f'ODL versie: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n'
 
     # write markdown table header
     for col in report.columns:
@@ -1823,7 +1849,7 @@ def process_supplier(supplier_config: dict,
         verbose = False,
     )
 
-    # fetch meta data from database create_markdown
+    # fetch meta data from database
     meta_data = st.sql_select(
         table_name = tables_name[dc.TAG_TABLE_META],
         columns = '*',
@@ -1982,22 +2008,29 @@ def process_table(tablename: str,
         # error_report = convert_errors_to_dataframe(report, messages, error_codes, total_errors)
 
         # write errors to file
-        create_markdown(error_report, pakbon_record, project_name, supplier_data_schema,
-                        doc_file, single_doc_name)
+        create_markdown(
+            report = error_report,
+            pakbon_record = pakbon_record,
+            project_name = project_name,
+            supplier_config = supplier_config,
+            supplier_id = supplier_data_schema,
+            report_file = doc_file,
+            filename = single_doc_name
+        )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
         write_insertion_sql(
-                data = None,
-                data_filename = supplier_data_schema,
-                pakbon = pakbon_record,
-                dataquality = error_report,
-                first_time_table = True,
-                sql_file = sql_file,
-                single_sql_name = single_sql_name,
-                tables_name = tables_name,
-                server_configs = server_configs,
-                )
+            data = None,
+            data_filename = supplier_data_schema,
+            pakbon = pakbon_record,
+            dataquality = error_report,
+            first_time_table = True,
+            sql_file = sql_file,
+            single_sql_name = single_sql_name,
+            tables_name = tables_name,
+            server_configs = server_configs,
+        )
 
     except DiDoError as e:
         logger.error(f'*** {str(e)}')
@@ -2122,6 +2155,7 @@ def process_file(filename: str,
             report = error_report,
             pakbon_record = pakbon_record,
             project_name = project_name,
+            supplier_config = supplier_config,
             supplier_id = supplier_id,
             report_file = doc_file,
             filename = single_doc_name
