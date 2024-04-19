@@ -1,8 +1,11 @@
 """
-did0_common.py is a library with common routines for DiDi.
+dido_common.py is a library with common routines for DiDo.
 """
+# from logging.config import dictConfig # required to import logging
+# import random
 
 import os
+import re
 import sys
 import yaml
 import psutil
@@ -15,7 +18,6 @@ import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 from os.path import join, splitext, dirname, basename, exists
-# from common import create_log, change_column_name, change_column_name, split_filename
 
 import simple_table as st
 
@@ -97,6 +99,8 @@ TIME_FORMAT = '%H:%M:%S'
 DATETIME_FORMAT = f'{DATE_FORMAT} {TIME_FORMAT}'
 
 
+sys.tracebacklimit = 0
+
 class DiDoError(Exception):
     """ To be raised for DiDo exceptions
 
@@ -104,26 +108,23 @@ class DiDoError(Exception):
         Exception (str): Exception to be raised
     """
     def __init__(self, message):
+        # get info where the exception occurred
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+
+        # print the info
+        print('')
+        print(f'> Exception {exc_type} occurred in line {exc_tb.tb_lineno} of file {fname} <')
+        print('')
+
         self.message = 'DiDo Fatal Error: ' + message
         logger.critical(self.message)
         super().__init__(self.message)
 
+        sys.exit()
     ### __init__ ###
 
 ### Class: DiDoError ###
-
-
-"""
-Module contains common functions for project
-"""
-import os
-import re
-import random
-import logging
-
-import pandas as pd
-from datetime import datetime
-from logging.config import dictConfig # required to import logging
 
 
 def create_log(filename: str, level: int = logging.INFO, reset: bool = True) -> object:
@@ -189,11 +190,13 @@ def create_log(filename: str, level: int = logging.INFO, reset: bool = True) -> 
 
     try:
         dictConfig(logging_configuration)
+
     except:
         print('*** Error while initializing logger.')
         print(f'*** Either the path to the log file does not exist: {filename}')
         print('*** or the "logs" directory does not exist in that path')
-        raise DiDoError('*** Aboring execution')
+
+        raise DiDoError('*** Aborting execution')
 
     # try..except
 
