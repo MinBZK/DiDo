@@ -14,6 +14,10 @@ import sqlalchemy
 import dido_common as dc
 import simple_table as st
 
+# pylint: disable=bare-except, line-too-long, consider-using-enumerate
+# pylint: disable=logging-fstring-interpolation, too-many-locals
+# pylint: disable=pointless-string-statement
+
 # print all columns of dataframe
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)

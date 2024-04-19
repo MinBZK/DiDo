@@ -1,19 +1,16 @@
-import gc
 import os
 import re
-import sys
-import json
 import time
-import psutil
 from datetime import datetime
+import psutil
 import numpy as np
 import pandas as pd
 
-import mutate
-import dido_common as dc
 import simple_table as st
-
+import dido_common as dc
 from dido_common import DiDoError
+
+import mutate
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
