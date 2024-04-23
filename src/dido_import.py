@@ -629,8 +629,22 @@ def check_constraints(data: pd.DataFrame,
 ### check_constraints ###
 
 
-def check_all(data, schema, supplier_config, max_errors):
-    """"""
+def check_all(data: pd.DataFrame,
+              schema: pd.DataFrame,
+              supplier_config: dict,
+              max_error: int
+             ):
+    """ Runs all data checks on data.
+
+    Args:
+        data (pd.DataFrame): data to run the checks on
+        schema (pd.DataFrame): description of the data
+        supplier_config (dict): supply configuration
+        max_error (int): maximum # errors before stopping to check for errors
+
+    Returns:
+        pd.DataFrame, int: report of all errors, total # of errors
+    """
     # create a zero report file
     report = pd.DataFrame(columns = ['Row', 'Column', 'Column Name', 'Error Code', 'Error Message'])
     report['Row'] = report['Row'].astype(int)
@@ -701,7 +715,19 @@ def check_all(data, schema, supplier_config, max_errors):
 ### check_all ###
 
 
-def create_markdown(report: pd.DataFrame,
+def generate_statistics(data: pd.DataFrame,
+                        schema: pd.DataFrame,
+                        outfile: object,
+                       ):
+
+    return
+
+### generate_statistics ###
+
+
+def create_markdown(data: pd.DataFrame,
+                    schema: pd.DataFrame,
+                    report: pd.DataFrame,
                     pakbon_record: pd.DataFrame,
                     project_name: str,
                     supplier_config: dict,
@@ -733,6 +759,7 @@ def create_markdown(report: pd.DataFrame,
     report_file.write(md)
     with open(filename, 'w', encoding="utf8") as outfile:
         outfile.write(md)
+        generate_statistics(data, schema, outfile)
 
     return
 
@@ -2149,6 +2176,8 @@ def process_file(filename: str,
 
         # write errors to file
         create_markdown(
+            data = data,
+            schema = supplier_data_schema,
             report = error_report,
             pakbon_record = pakbon_record,
             project_name = project_name,

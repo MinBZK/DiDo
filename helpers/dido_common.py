@@ -69,7 +69,8 @@ VALUE_NOT_CONFORM_RE = 8 #"Domein - Waarde voldoet niet aan reguliere expressie"
 
 # Allowed column names
 ALLOWED_COLUMN_NAMES = ['kolomnaam', 'datatype', 'leverancier_kolomnaam',
-                   'leverancier_kolomtype', 'gebruiker_info', 'beschrijving']
+                        'leverancier_kolomtype', 'gebruiker_info',
+                        'beschrijving']
 # Directory constants
 DIR_SCHEMAS = 'schemas'
 DIR_DOCS    = 'docs'
@@ -99,8 +100,6 @@ TIME_FORMAT = '%H:%M:%S'
 DATETIME_FORMAT = f'{DATE_FORMAT} {TIME_FORMAT}'
 
 
-sys.tracebacklimit = 0
-
 class DiDoError(Exception):
     """ To be raised for DiDo exceptions
 
@@ -121,7 +120,7 @@ class DiDoError(Exception):
         logger.critical(self.message)
         super().__init__(self.message)
 
-        sys.exit()
+        # sys.exit()
     ### __init__ ###
 
 ### Class: DiDoError ###
