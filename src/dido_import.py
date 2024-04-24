@@ -5,6 +5,7 @@ from datetime import datetime
 import psutil
 import numpy as np
 import pandas as pd
+import matplotlib
 
 import simple_table as st
 import dido_common as dc
@@ -629,8 +630,22 @@ def check_constraints(data: pd.DataFrame,
 ### check_constraints ###
 
 
-def check_all(data, schema, supplier_config, max_errors):
-    """"""
+def check_all(data: pd.DataFrame,
+              schema: pd.DataFrame,
+              supplier_config: dict,
+              max_errors: int
+             ):
+    """ Runs all data checks on data.
+
+    Args:
+        data (pd.DataFrame): data to run the checks on
+        schema (pd.DataFrame): description of the data
+        supplier_config (dict): supply configuration
+        max_error (int): maximum # errors before stopping to check for errors
+
+    Returns:
+        pd.DataFrame, int: report of all errors, total # of errors
+    """
     # create a zero report file
     report = pd.DataFrame(columns = ['Row', 'Column', 'Column Name', 'Error Code', 'Error Message'])
     report['Row'] = report['Row'].astype(int)
@@ -701,13 +716,197 @@ def check_all(data, schema, supplier_config, max_errors):
 ### check_all ###
 
 
-def create_markdown(report: pd.DataFrame,
+def generate_statistics(data: pd.DataFrame,
+                        stat_config: dict,
+                        table: str,
+                        data_schema: pd.DataFrame,
+                        supplier_config: pd.DataFrame,
+                        supplier_id: str,
+                       ):
+
+    def get_freqs(variable: pd.Series,
+                  var_name: str,
+                  db_stats: pd.DataFrame,
+                  query: str,
+                  plot_pad: str,
+                  limit: int,
+                 ):
+        sql = ''
+        freqs = variable.value_counts().sort_values(ascending = False)
+        # print(freqs)
+        total = freqs.sum()
+        if 1 < len(freqs) <= limit:
+            db_freqs = st.query_to_dataframe(query, sql_server_config = db_servers['DATA_SERVER_CONFIG'])
+            db_freqs[var_name] = db_freqs[var_name].astype(str).str.replace('-', '')
+            db_freqs = db_freqs.set_index(var_name)
+
+            sql += f'\n**Frequency distribution of {len(freqs)} categories for {var_name}**\n\n'
+            sql += '| Category | Absolute | Delivery % | Database % |\n'
+            sql += '| -------- | -------- | ---------- | ---------- |\n'
+
+            results = {}
+            for idx, value in freqs.items():
+                results[idx] = [f'{value}', f'{100 * value / total:.2f}', '']
+
+            for idx, row in db_freqs.iterrows():
+                value = row['percent_total']
+
+                if idx in results.keys():
+                    # print('...', value)
+                    results[idx][2] = f'{value:.2f}'
+
+                else:
+                    results[idx] = ['', '', f'{value:.2f}']
+
+                # if
+            # for
+
+            for key in results.keys():
+                s = results[key]
+                sql += f'| {key} | {s[0]} | {s[1]} | {s[2]} |\n'
+
+            # for
+
+            """
+            # prepare the data for plotting
+            results = pd.DataFrame.from_dict(results, orient = 'index')
+            results = results.drop([0], axis = 1)
+            results = results.reset_index()
+            results.columns = [var_name, 'Delivery %', 'Database %']
+            results = results.replace(r'^\s*$', np.nan, regex=True)
+            results['Delivery %'] = results['Delivery %'].astype(float)
+            results['Database %'] = results['Database %'].astype(float)
+            # print(results)
+
+            ax = results.plot.bar(x = var_name, y = 'Delivery %', rot = 0)
+            filename = os.path.join(plot_pad, var_name) + '.png'
+            ax.figure.savefig(filename)
+            matplotlib.pyplot.close()
+
+            sql += f'\n![images]({filename})\n\n'
+            """
+
+        else:
+            sql += f'\nTotal of {len(freqs)} categories thereby not in range [2..{limit}], ignored.\n\n'
+
+        # if
+
+        if db_stats is None:
+            logger.info(f'Frequencies for {var_name}')
+
+        else:
+            logger.info(f'Statistics for {var_name}, median = {db_stats.loc[0, "median"]:.2f},'
+                        f's.d. = {db_stats.loc[0, "std"]:.2f}')
+
+        return sql
+
+    ### get_freqs ###
+
+    # initialize variables
+    db_servers = dc.get_par_par(supplier_config, 'config', 'SERVER_CONFIGS', None)
+    schema = db_servers['DATA_SERVER_CONFIG']['POSTGRES_SCHEMA']
+    extra_schema = dc.load_odl_table(dc.EXTRA_TEMPLATE, db_servers['ODL_SERVER_CONFIG'])
+    extra_cols = extra_schema['kolomnaam'].tolist()
+    work_dir = dc.get_par_par(supplier_config, 'config', 'WORK_DIR', '')
+    plot_pad = os.path.join(work_dir, 'images')
+    md = '\n### Statistics\n\n'
+
+    logger.info('')
+    logger.info('[Generating statistics]')
+
+    # get which types are reals and integers
+    reals = supplier_config['config']['PARAMETERS']['SUB_TYPES']['real']
+    ints = supplier_config['config']['PARAMETERS']['SUB_TYPES']['integer']
+
+    # get parameters for statistics
+    stat_supplier = stat_config[supplier_id]
+    max_categories = dc.get_par(stat_supplier, 'max_categories', 50)
+    columns = dc.get_par(stat_supplier, 'columns', '')
+    if columns == ['*']:
+        columns = data_schema.index.tolist()
+
+    # Iterate over all columns
+    for col_name in columns:
+        # no statistics for dido meta columns
+        if col_name in extra_cols:
+            continue
+
+        # setup the markdown variable for this column
+        dt = data_schema.loc[col_name, 'datatype']
+        md += '----\n'
+        md += f'**Statistic analysis for column {col_name} ({dt})**  \n\n'
+
+        # prepare the queries to fetch statistics from the database
+        db_col = {'column': col_name, 'schema': schema, 'table': table}
+        db_stats = dc.DB_STATS.format(**db_col)
+        db_freqs = dc.DB_FREQS.format(**db_col)
+
+        # when a column is interger-like or real-like statistics can be performed
+        if dt in reals or dt in ints:
+            if dt in reals:
+                column = pd.to_numeric(data[col_name], errors = 'coerce')
+            elif dt in ints:
+                column = pd.to_numeric(data[col_name], errors = 'coerce')
+            else:
+                column = None
+            # if
+
+            stats = st.query_to_dataframe(db_stats, sql_server_config = db_servers['DATA_SERVER_CONFIG'])
+
+            moments = column.agg(['min', 'max', 'mean', 'median', 'std'])
+
+            md += f'\n**Statistics for {col_name}**  \n\n'
+
+            # write markdown table header
+            md += '| Statistic | Delivery | Database |  \n'
+            md += '| --------- | -------- | -------- |  \n'
+
+            # write statistics
+            misdats = column.isna().sum()
+            dbval = stats.loc[0, 'n']
+            md += f'| N | {len(column)} | {dbval} |\n'
+            dbval = stats.loc[0, 'misdat']
+            md += f'| Missing data | {misdats} | {dbval} |\n'
+            # write markdown info
+            for idx, value in moments.items():
+                dbval = stats.loc[0, idx]
+                md += f'| {idx} | {value:.2f} | {dbval:.2f} |  \n'
+
+            # for
+
+            logger.info(f'Statistics for {col_name}, median = {stats.loc[0, "median"]:.2f}, '
+                        f's.d. = {stats.loc[0, "std"]:.2f}')
+
+        # if
+
+        # when data type is not real, frequencies can be computed
+        if dt not in reals:
+            md += get_freqs(
+                variable = data[col_name],
+                var_name = col_name,
+                db_stats = None,
+                query = db_freqs,
+                plot_pad = plot_pad,
+                limit = max_categories,
+            )
+
+    # for
+
+    return md
+
+### generate_statistics ###
+
+
+def create_markdown(data: pd.DataFrame,
+                    table: str,
+                    schema: pd.DataFrame,
+                    report: pd.DataFrame,
                     pakbon_record: pd.DataFrame,
                     project_name: str,
                     supplier_config: dict,
                     supplier_id: str,
                     report_file: object,
-                    filename: str
+                    filename: str,
                    ):
     """ Generates markdown documentation of errors and save to file
 
@@ -730,9 +929,25 @@ def create_markdown(report: pd.DataFrame,
         filename = fn,
     )
 
+    # check if statistics should be generated
+    statistics = dc.get_par_par(supplier_config, 'delivery', 'STATISTICS', {})
+    if len(statistics) > 0:
+        # True, so add statistics to the markdown
+        md += generate_statistics(
+            data = data,
+            stat_config = statistics,
+            table = table,
+            data_schema = schema,
+            supplier_config = supplier_config,
+            supplier_id = supplier_id,
+        )
+
     report_file.write(md)
+
     with open(filename, 'w', encoding="utf8") as outfile:
         outfile.write(md)
+
+    # with
 
     return
 
@@ -773,8 +988,9 @@ def create_markdown_report(report:pd.DataFrame,
     patch_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_PATCH']
     dido_date = odl_meta_data.loc[0, 'dido_version_patch_date']
 
+    # For markdown: two spaces at end if line garantees a newline
     md = f'# Project: {project_name}\n## Leverancier: {supplier_id}\n'
-    md += f'### Levering voor rapportageperiode: {rapportageperiode}  \n'
+    md += f'**Levering voor rapportageperiode: {rapportageperiode}**  \n'
     md += f'Data ingelezen van file: {filename}  \n\n'
     md += f'Tijdstip van inlezen: {datetime.now().strftime(dc.DATETIME_FORMAT)}  \n'
     md += f'DiDo versie: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n'
@@ -2149,13 +2365,16 @@ def process_file(filename: str,
 
         # write errors to file
         create_markdown(
+            data = data,
+            table = tables_name[dc.TAG_TABLE_SCHEMA],
+            schema = supplier_data_schema,
             report = error_report,
             pakbon_record = pakbon_record,
             project_name = project_name,
             supplier_config = supplier_config,
             supplier_id = supplier_id,
             report_file = doc_file,
-            filename = single_doc_name
+            filename = single_doc_name,
         )
         create_csv_report(error_report, csv_file, single_csv_name)
 

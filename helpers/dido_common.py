@@ -16,6 +16,7 @@ import sqlalchemy
 import pandas as pd
 
 from datetime import datetime
+from logging.config import dictConfig
 from dotenv import load_dotenv
 from os.path import join, splitext, dirname, basename, exists
 
@@ -69,7 +70,8 @@ VALUE_NOT_CONFORM_RE = 8 #"Domein - Waarde voldoet niet aan reguliere expressie"
 
 # Allowed column names
 ALLOWED_COLUMN_NAMES = ['kolomnaam', 'datatype', 'leverancier_kolomnaam',
-                   'leverancier_kolomtype', 'gebruiker_info', 'beschrijving']
+                        'leverancier_kolomtype', 'gebruiker_info',
+                        'beschrijving']
 # Directory constants
 DIR_SCHEMAS = 'schemas'
 DIR_DOCS    = 'docs'
@@ -98,8 +100,24 @@ DATE_FORMAT = '%Y-%m-%d'
 TIME_FORMAT = '%H:%M:%S'
 DATETIME_FORMAT = f'{DATE_FORMAT} {TIME_FORMAT}'
 
+# Statitics from database
+DB_STATS = """SELECT  count({column}) AS n,
+        sum(CASE WHEN {column} IS NULL THEN 1 ELSE 0 END) AS misdat,
+        min({column}),
+        max({column}),
+        avg({column}) AS mean,
+        PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY {column}) AS median,
+        stddev({column}) AS std
+FROM {schema}.{table};
+"""
 
-sys.tracebacklimit = 0
+DB_FREQS = """SELECT {table}.{column}, 100 * (count(*) / tablestat.total::float) AS percent_total
+FROM odl.{table}
+CROSS JOIN (SELECT count(*) AS total FROM {schema}.{table}) AS tablestat
+GROUP BY tablestat.total, {schema}.{table}.{column}
+ORDER BY percent_total DESC;
+"""
+
 
 class DiDoError(Exception):
     """ To be raised for DiDo exceptions
@@ -121,7 +139,7 @@ class DiDoError(Exception):
         logger.critical(self.message)
         super().__init__(self.message)
 
-        sys.exit()
+        # sys.exit()
     ### __init__ ###
 
 ### Class: DiDoError ###
