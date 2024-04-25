@@ -344,6 +344,42 @@ def load_data(supplier_config: dict,
 ### load_data ###
 
 
+def select_rows(data: pd.DataFrame,
+                # supplier_config: dict,
+                supplier: str,
+                schema: pd.DataFrame,
+                meta: pd.DataFrame,
+                select_data: dict,
+                # headers: dict,
+                # sample_size: int,
+                # server_config: dict,
+                # encoding: str,
+               ) -> pd.DataFrame:
+
+    select_data = select_data[supplier]
+    cols = list(select_data.keys())
+    if len(cols) > 0:
+        logger.info('[selecting rows from data]')
+
+        # Initialize variables used in iteration
+        for col in cols:
+            old_size = len(data)
+
+            selection_list = select_data[col]
+            data = data[data[col].isin(selection_list)]
+            new_size = len(data)
+            logger.info(f'Selecting for column {col}: size from {old_size} to {new_size}')
+
+        # for
+        logger.info('')
+
+    # if
+
+    return data
+
+### select_rows ###
+
+
 def evaluate_headers(data: pd.DataFrame,
                      supplier_config: dict,
                      supplier: str,
@@ -626,6 +662,7 @@ def process_data(data: pd.DataFrame,
                  supplier: str,
                  schema: pd.DataFrame,
                  meta: pd.DataFrame,
+                 select_data: dict,
                  renames: dict,
                  real_types: list,
                  strip_space: dict,
@@ -636,6 +673,23 @@ def process_data(data: pd.DataFrame,
     mem = psutil.virtual_memory()
     dc.report_ram('Memory use at process_data')
     logger.info('')
+
+    # select rows
+    if select_data is not None and supplier in select_data.keys():
+        cpu = time.time()
+
+        data = select_rows(
+            data = data,
+            supplier = supplier,
+            schema = schema,
+            meta = meta,
+            select_data = select_data,
+        )
+
+        cpu = time.time() - cpu
+        logger.info(f'{len(data)} records stripped from whitespace in {cpu:.0f} seconds')
+
+    # if
 
     # strip space left and right
     if strip_space is not None and supplier in strip_space.keys():
@@ -882,6 +936,7 @@ def prepare_one_delivery(cargo: dict,
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     db_servers = config_dict['SERVER_CONFIGS']
+    select_data = dc.get_par(delivery_config, 'SELECT', None)
     renames = dc.get_par(delivery_config, 'RENAME_DATA', None)
     strip_space = dc.get_par(delivery_config, 'STRIP_SPACE', None)
     headers = dc.get_par(delivery_config, 'HEADERS', {})
@@ -963,6 +1018,7 @@ def prepare_one_delivery(cargo: dict,
             supplier = leverancier_id,
             schema = leverancier_schema,
             meta = leverancier_metadata,
+            select_data = select_data,
             renames = rename_copy,
             real_types = real_types,
             strip_space = strip_space,
