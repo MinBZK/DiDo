@@ -737,29 +737,31 @@ def generate_statistics(data: pd.DataFrame,
         total = freqs.sum()
         if 1 < len(freqs) <= limit:
             db_freqs = st.query_to_dataframe(query, sql_server_config = db_servers['DATA_SERVER_CONFIG'])
-            db_freqs[var_name] = db_freqs[var_name].astype(str).str.replace('-', '')
-            db_freqs = db_freqs.set_index(var_name)
+            results = {'err': ['-', '-', '-']}
+            if db_freqs is not None:
+                db_freqs[var_name] = db_freqs[var_name].astype(str).str.replace('-', '')
+                db_freqs = db_freqs.set_index(var_name)
 
-            sql += f'\n**Frequency distribution of {len(freqs)} categories for {var_name}**\n\n'
-            sql += '| Category | Absolute | Delivery % | Database % |\n'
-            sql += '| -------- | -------- | ---------- | ---------- |\n'
+                sql += f'\n**Frequency distribution of {len(freqs)} categories for {var_name}**\n\n'
+                sql += '| Category | Absolute | Delivery % | Database % |\n'
+                sql += '| -------- | -------- | ---------- | ---------- |\n'
 
-            results = {}
-            for idx, value in freqs.items():
-                results[idx] = [f'{value}', f'{100 * value / total:.2f}', '']
+                for idx, value in freqs.items():
+                    results[idx] = [f'{value}', f'{100 * value / total:.2f}', '']
 
-            for idx, row in db_freqs.iterrows():
-                value = row['percent_total']
+                for idx, row in db_freqs.iterrows():
+                    value = row['percent_total']
 
-                if idx in results.keys():
-                    # print('...', value)
-                    results[idx][2] = f'{value:.2f}'
+                    if idx in results.keys():
+                        # print('...', value)
+                        results[idx][2] = f'{value:.2f}'
 
-                else:
-                    results[idx] = ['', '', f'{value:.2f}']
+                    else:
+                        results[idx] = ['', '', f'{value:.2f}']
 
-                # if
-            # for
+                    # if
+                # for
+            # if
 
             for key in results.keys():
                 s = results[key]
@@ -2433,8 +2435,9 @@ def dido_import(header: str):
     # read the configuration file
     config_dict = dc.read_config(args.project)
     dc.display_dido_header(header, config_dict)
+    delivery_filename = args.delivery
 
-    delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], args.delivery)
+    delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], delivery_filename)
     overwrite = dc.get_par(delivery_config, 'ENFORCE_IMPORT_IF_TABLE_EXISTS', False)
 
     # get the database server definitions
@@ -2462,8 +2465,10 @@ def dido_import(header: str):
         suppliers_to_process = leveranciers.keys()
 
     # create the output file names
-    report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.csv')
-    report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
+    _, report_filename, _ = dc.split_filename(delivery_filename)
+    report_filename += '_report'
+    report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, report_filename + '.csv')
+    report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, report_filename + '.md')
     sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'import-all-deliveries.sql')
 
     # load DiDo parameters to fetch BEGINNING_OF_WORLD and END_OF_WORLD and store into config_dict

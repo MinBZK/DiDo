@@ -1176,7 +1176,7 @@ if __name__ == '__main__':
         print('')
         if args.project is None:
             print('You specified no project directory')
-            print('Are you sure you specified the --project <path/to/project> parameter?')
+            print('Are you sure you specified the correct --project <path/to/project> parameter?')
 
         else:
             print('Probabbly there is no logs directory in the project map')

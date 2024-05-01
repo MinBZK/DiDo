@@ -126,13 +126,17 @@ class DiDoError(Exception):
         Exception (str): Exception to be raised
     """
     def __init__(self, message):
+        print('')
+
         # get info where the exception occurred
         exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        if exc_tb is not None:
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(f'> Exception {exc_type} occurred in line {exc_tb.tb_lineno} of file {fname} <')
 
-        # print the info
-        print('')
-        print(f'> Exception {exc_type} occurred in line {exc_tb.tb_lineno} of file {fname} <')
+        else:
+            print(f'> Exception {exc_type} occurred <')
+
         print('')
 
         self.message = 'DiDo Fatal Error: ' + message

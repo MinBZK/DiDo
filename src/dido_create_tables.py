@@ -1699,8 +1699,6 @@ def dido_begin(config_dict: dict):
 
     # select which suppliers to process
     suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
-    # if 'SUPPLIERS_TO_PROCESS' in config_dict.keys():
-    #     suppliers_to_process = config_dict['SUPPLIERS_TO_PROCESS']
 
     # just * means process all
     if suppliers_to_process == '*':
@@ -1746,9 +1744,9 @@ def dido_begin(config_dict: dict):
         <...> - when necessary other sources with their interface can be added
 
         A source other than <schema> must be converted to schema format.
-        Fot p-direct the function create_schema_from_pdirekt_datadict is provided.
+        For p-direct the function create_schema_from_pdirekt_datadict is provided.
+        The function preprocess_data_dict prepocesses a data dictionary when present.
         """
-
         data_dict = dc.get_par(leverancier, 'data_dictionary', {})
         if len(data_dict) > 0:
             preprocess_data_dict(data_dict, fname_schema_load, dir_load, leverancier)
@@ -1765,7 +1763,7 @@ def dido_begin(config_dict: dict):
         logger.debug(f'[Input schema file: {fname_schema_load}]')
         schema_leverancier = pd.read_csv(
             fname_schema_load,
-            sep = ';', # r'\s*;\s*', # warning re seps tend to ignore quoted data
+            sep = ';', # r'\s*;\s*', # warning regular expression seps tend to ignore quoted data
             dtype = str,
             keep_default_na = False,
             engine = 'python',
@@ -1775,7 +1773,7 @@ def dido_begin(config_dict: dict):
         Origin is an option that indicates the origin of the data. The options are:
         <file>  - the data are delivered by file
         <table> - the data are delived by a postgres table, only valid for initialization
-        <api>   - data are delived via an internet api, one tine initialization and frequent updates
+        <api>   - data are delived via an internet api, one time initialization and frequent updates
                   when this option is specified, the connection is tested
 
         Only <table> impacts dido_begin, all three impact dido_data_prep and dido_import
@@ -1851,6 +1849,11 @@ def dido_begin(config_dict: dict):
 
 
 def dido_create(config_dict: dict):
+    """ generates markdown docs for wiki and SQL from schema and meta.
+
+    Args:
+        config_dict (dict): configuration file
+    """
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
     odl_server_config = db_servers['ODL_SERVER_CONFIG']
