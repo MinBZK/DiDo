@@ -137,10 +137,18 @@ def query_to_dataframe(query: str,
                                database = database
                               )
 
-    return pd.read_sql(query,
-        con = engine,
-        coerce_float = True,
-        )
+    try:
+        result = pd.read_sql(query,
+            con = engine,
+            coerce_float = True,
+            )
+
+    except:
+        result = None
+
+    return result
+
+### query_to_dataframe ###
 
 
 def sql_select(table_name: str = '',
