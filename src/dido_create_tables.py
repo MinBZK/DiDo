@@ -29,13 +29,11 @@ from dido_list import dido_list
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
-# pylint: disable=pointless-string-statement
+# pylint: disable=pointless-string-statement, consider-using-dict-items
 
 # show all columns of dataframe
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
-
-# pylint: disable=pointless-string-statement, logging-fstring-interpolation, line-too-long
 
 #######################################################################################################################
 #
@@ -1684,6 +1682,7 @@ def dido_begin(config_dict: dict):
     columns_to_write = config_dict['COLUMNS']
     table_desc = config_dict['TABLES']
     report_periods = config_dict['REPORT_PERIODS']
+    use_of_batches = False
 
     # get data types
     data_types = dc.create_data_types()
@@ -1709,138 +1708,145 @@ def dido_begin(config_dict: dict):
         logger.info('')
         logger.info(f'=== {leverancier_id} ===')
 
-        leverancier, deliveries = dc.get_supplier_dict(config_dict, leverancier_id, 1)
-        if len(deliveries) > 0:
-            logger.info('')
-            logger.info('Deliveries supplied (x = chosen)')
-            for key in deliveries.keys():
-                logger.info(f" - {deliveries[key]['delivery_naam']} " \
-                            f"{deliveries[key]['delivery_keus']}")
+        leverancier, projects = dc.get_supplier_projects(config_dict, leverancier_id, 1)
 
-            # for
-            logger.info('')
-        # if
+        for project_key in projects:
+            logger.info(f'--- {project_key} ---')
+            project = projects[project_key]
 
-        # directories
-        # direcory to load files from root_dir
-        dir_load = os.path.join(root_dir, 'schemas', leverancier_id)
+            # directories
+            # direcory to load files from root_dir
+            dir_load = os.path.join(root_dir, 'schemas', leverancier_id)
 
-        # directory to save into work_dir
-        dir_save = os.path.join(work_dir, 'schemas', leverancier_id)
+            # directory to save into work_dir
+            dir_save = os.path.join(work_dir, 'schemas', leverancier_id)
 
-        # files
-        source_file = leverancier['schema_file']
-        fname_schema_load = os.path.join(dir_load, source_file + '.schema.csv')
-        fname_meta_load = os.path.join(dir_load, source_file + '.meta.csv')
-        fname_data_load = os.path.join(dir_load, source_file + '.data.csv')
-        fname_schema_save = fname_schema_load.replace(dir_load, dir_save)
-        fname_meta_save = fname_meta_load.replace(dir_load, dir_save)
-        fname_data_save = fname_data_load.replace(dir_load, dir_save)
+            # when using batch, fetch source_file and data_dict from batch
+            data_dict = ''
+            if use_of_batches:
+                current_batch = leverancier['batch']['projects'][project]
+                source_file = dc.get_par(current_batch, 'schema_file', '')
+                data_dict = dc.get_par(current_batch, 'data_dict', '')
 
-        """
-        schema_source determines the origin of the schema. Sources are:
-        <schema> - a user supplied schema file
-        <P-Direkt> - data dictionary from P-Direkt
-        <...> - when necessary other sources with their interface can be added
+            else:
+                source_file = leverancier['schema_file']
+                data_dict = dc.get_par(leverancier, 'data_dictionary', {})
+                if len(data_dict) > 0:
+                    preprocess_data_dict(data_dict, fname_schema_load, dir_load, leverancier)
 
-        A source other than <schema> must be converted to schema format.
-        For p-direct the function create_schema_from_pdirekt_datadict is provided.
-        The function preprocess_data_dict prepocesses a data dictionary when present.
-        """
-        data_dict = dc.get_par(leverancier, 'data_dictionary', {})
-        if len(data_dict) > 0:
-            preprocess_data_dict(data_dict, fname_schema_load, dir_load, leverancier)
+            # files
+            fname_schema_load = os.path.join(dir_load, source_file + '.schema.csv')
+            fname_meta_load = os.path.join(dir_load, source_file + '.meta.csv')
+            fname_data_load = os.path.join(dir_load, source_file + '.data.csv')
+            fname_schema_save = fname_schema_load.replace(dir_load, dir_save)
+            fname_meta_save = fname_meta_load.replace(dir_load, dir_save)
+            fname_data_save = fname_data_load.replace(dir_load, dir_save)
 
-        # load templates from database
-        schema_template = dc.load_odl_table(dc.SCHEMA_TEMPLATE, odl_server_config)
+            """
+            schema_source determines the origin of the schema. Sources are:
+            <schema> - a user supplied schema file
+            <P-Direkt> - data dictionary from P-Direkt
+            <...> - when necessary other sources with their interface can be added
 
-        # load source files for current supplier: schema and meta file
-        if not os.path.exists(fname_schema_load):
-            raise DiDoError(f'Schema file not found {fname_schema_load}')
-        if not os.path.exists(fname_meta_load):
-            raise DiDoError(f'Meta data file not found {fname_meta_load}')
+            A source other than <schema> must be converted to schema format.
+            For p-direct the function create_schema_from_pdirekt_datadict is provided.
+            The function preprocess_data_dict prepocesses a data dictionary when present.
+            """
+            # data_dict = dc.get_par(leverancier, 'data_dictionary', {})
+            if len(data_dict) > 0:
+                preprocess_data_dict(data_dict, fname_schema_load, dir_load, leverancier)
 
-        logger.debug(f'[Input schema file: {fname_schema_load}]')
-        schema_leverancier = pd.read_csv(
-            fname_schema_load,
-            sep = ';', # r'\s*;\s*', # warning regular expression seps tend to ignore quoted data
-            dtype = str,
-            keep_default_na = False,
-            engine = 'python',
-        ).fillna('')
+            # load templates from database
+            schema_template = dc.load_odl_table(dc.SCHEMA_TEMPLATE, odl_server_config)
 
-        """
-        Origin is an option that indicates the origin of the data. The options are:
-        <file>  - the data are delivered by file
-        <table> - the data are delived by a postgres table, only valid for initialization
-        <api>   - data are delived via an internet api, one time initialization and frequent updates
-                  when this option is specified, the connection is tested
+            # load source files for current supplier: schema and meta file
+            if not os.path.exists(fname_schema_load):
+                raise DiDoError(f'Schema file not found {fname_schema_load}')
+            if not os.path.exists(fname_meta_load):
+                raise DiDoError(f'Meta data file not found {fname_meta_load}')
 
-        Only <table> impacts dido_begin, all three impact dido_data_prep and dido_import
-        """
+            logger.debug(f'[Input schema file: {fname_schema_load}]')
+            schema_leverancier = pd.read_csv(
+                fname_schema_load,
+                sep = ';', # r'\s*;\s*', # warning regular expression seps tend to ignore quoted data
+                dtype = str,
+                keep_default_na = False,
+                engine = 'python',
+            ).fillna('')
 
-        # fetch origin from config when present, else default to <file>
-        if 'origin' in leverancier.keys():
-            origin = leverancier['origin']
+            """
+            Origin is an option that indicates the origin of the data. The options are:
+            <file>  - the data are delivered by file
+            <table> - the data are delived by a postgres table, only valid for initialization
+            <api>   - data are delived via an internet api, one time initialization and frequent updates
+                    when this option is specified, the connection is tested
 
-        else:
-            origin = {'input': '<file>'}
+            Only <table> impacts dido_begin, all three impact dido_data_prep and dido_import
+            """
 
-        if origin['input'] == '<file>':
-            logger.info('Origin is <file>')
+            # fetch origin from config when present, else default to <file>
+            if 'origin' in leverancier.keys():
+                origin = leverancier['origin']
 
-        elif origin['input'] == '<table>':
-            # fetch schema  from table
-            table_name = origin['table_name']
-            logger.debug(f'[Input schema table: {table_name}]')
-            table_leverancier = fetch_schema_from_table(table_name, foreign_server_config)
-            schema_leverancier = merge_table_and_schema(table_leverancier, schema_leverancier)
-            logger.info(f'Origin is <table>, from {table_name}')
+            else:
+                origin = {'input': '<file>'}
 
-        else:
-            raise DiDoError(f'*** Unknown origin input: { origin["input"]}. Only <file>, <table> or <api> allowed.')
+            if origin['input'] == '<file>':
+                logger.info('Origin is <file>')
+
+            elif origin['input'] == '<table>':
+                # fetch schema  from table
+                table_name = origin['table_name']
+                logger.debug(f'[Input schema table: {table_name}]')
+                table_leverancier = fetch_schema_from_table(table_name, foreign_server_config)
+                schema_leverancier = merge_table_and_schema(table_leverancier, schema_leverancier)
+                logger.info(f'Origin is <table>, from {table_name}')
+
+            else:
+                raise DiDoError(f'*** Unknown origin input: { origin["input"]}. Only <file>, <table> or <api> allowed.')
 
 
-        logger.debug(schema_leverancier)
-        schema_leverancier = merge_bootstrap_data(schema_leverancier, dc.EXTRA_TEMPLATE, odl_server_config)
-        meta_leverancier = pd.read_csv(fname_meta_load, sep=';', dtype=str, keep_default_na=False)
-        meta_leverancier = meta_leverancier.fillna('').set_index('attribuut')
+            logger.debug(schema_leverancier)
+            schema_leverancier = merge_bootstrap_data(schema_leverancier, dc.EXTRA_TEMPLATE, odl_server_config)
+            meta_leverancier = pd.read_csv(fname_meta_load, sep=';', dtype=str, keep_default_na=False)
+            meta_leverancier = meta_leverancier.fillna('').set_index('attribuut')
 
-        # load the data from the parameters table
-        bootstrap_data = dc.load_parameters()
+            # load the data from the parameters table
+            bootstrap_data = dc.load_parameters()
 
-        # fetch the allowed datatypes from dido.yaml
-        temp, _ = dc.create_data_types()
-        allowed_datatypes = list(temp.keys())
+            # fetch the allowed datatypes from dido.yaml
+            temp, _ = dc.create_data_types()
+            allowed_datatypes = list(temp.keys())
 
-        # preprocess and save the schema
-        schema_template = apply_schema_odl(
-            template = schema_template,
-            schema = schema_leverancier,
-            meta = meta_leverancier,
-            data_dict = data_types,
-            filename = fname_schema_load,
-            allowed_datatypes = allowed_datatypes,
-            supplier_config = leverancier,
-        )
+            # preprocess and save the schema
+            schema_template = apply_schema_odl(
+                template = schema_template,
+                schema = schema_leverancier,
+                meta = meta_leverancier,
+                data_dict = data_types,
+                filename = fname_schema_load,
+                allowed_datatypes = allowed_datatypes,
+                supplier_config = leverancier,
+            )
 
-        schema_template.to_csv(fname_schema_save, sep=';', index=False)
+            schema_template.to_csv(fname_schema_save, sep=';', index=False)
 
-        # preprocess and save the meta data
-        meta_leverancier = apply_meta_odl(
-            meta = meta_leverancier,
-            n_cols = len(schema_template),
-            filename = fname_meta_load,
-            bootstrap_data = bootstrap_data,
-            server_config = odl_server_config,
-        )
-        meta_leverancier.to_csv(fname_meta_save, sep=';', index=True)
+            # preprocess and save the meta data
+            meta_leverancier = apply_meta_odl(
+                meta = meta_leverancier,
+                n_cols = len(schema_template),
+                filename = fname_meta_load,
+                bootstrap_data = bootstrap_data,
+                server_config = odl_server_config,
+            )
+            meta_leverancier.to_csv(fname_meta_save, sep=';', index=True)
 
-        # if data file exists, load and store it
-        if os.path.exists(fname_data_load):
-            logger.info('[Copying data file]')
-            shutil.copy2(fname_data_load, fname_data_save)
-
+            # if data file exists, load and store it
+            if os.path.exists(fname_data_load):
+                logger.info('[Copying data file]')
+                shutil.copy2(fname_data_load, fname_data_save)
+            # if
+        # for
     # for
 
     return
@@ -1901,52 +1907,49 @@ def dido_create(config_dict: dict):
                 # count the number of deliveries and fetch sup[plier and delivery accordingly
                 delivery_seq = 1
                 logger.info(f'Dido_create applies always delivery {delivery_seq}')
-                leverancier_config, deliveries = dc.get_supplier_dict(config_dict, leverancier_id, delivery_seq)
-                if len(deliveries) > 0:
-                    logger.info('Delivery configs supplied in config.yaml (x = chosen)')
-                    for key in deliveries.keys():
-                        logger.info(f" - {deliveries[key]['delivery_naam']} " \
-                                    f"{deliveries[key]['delivery_keus']}")
+                leverancier_config, projects = dc.get_supplier_projects(config_dict, leverancier_id, delivery_seq)
 
+                for project_key in projects:
+                    logger.info(f'--- {project_key} ---')
+                    project = projects[project_key]
+
+                    # copy table info into leverancier_config
+                    leverancier_config[dc.TAG_TABLES] = {}
+                    # []
+                    for table_key in table_desc.keys():
+                        # COPY the table dictionary to the supplier dict,
+                        # else a shared reference will be copied; use copy() function
+                        leverancier_config[dc.TAG_TABLES][table_key]= table_desc[table_key].copy()
+
+                        # copy all keys, as they are string, the are correctly copied
+                        for key in table_desc[table_key].keys():
+                            leverancier_config[dc.TAG_TABLES][table_key][key] = table_desc[table_key][key]
+                        # for
                     # for
-                    logger.info('')
-                # if
 
-                # copy table info into leverancier_config
-                leverancier_config[dc.TAG_TABLES] = {}
-                []
-                for table_key in table_desc.keys():
-                    # COPY the table dictionary to the supplier dict,
-                    # else a shared reference will be copied; use copy() function
-                    leverancier_config[dc.TAG_TABLES][table_key]= table_desc[table_key].copy()
+                    # load schema and documentation files and add to leveranciers info
+                    # leveranciers = load_supplier_schemas(leveranciers, root_dir, work_dir)
+                    leveranciers = load_supplier_schemas(leverancier_config, root_dir, work_dir)
 
-                    # copy all keys, as they are string, the are correctly copied
-                    for key in table_desc[table_key].keys():
-                        leverancier_config[dc.TAG_TABLES][table_key][key] = table_desc[table_key][key]
+                    # add ODL info from database
+                    leveranciers = load_supplier_odl(leverancier_config, project_name, odl_server_config)
 
-                # load schema and documentation files and add to leveranciers info
-                # leveranciers = load_supplier_schemas(leveranciers, root_dir, work_dir)
-                leveranciers = load_supplier_schemas(leverancier_config, root_dir, work_dir)
+                    # check if the tables exist in the database and warn the user if such is the case
+                    #@@@@@
+                    presence, any_present = test_for_existing_tables(project_name, leveranciers, data_server_config)
+                    if any_present:
+                        logger.warning('!!! Er bestaan al tabellen, deze moeten eerst worden vernietigd met "dido_kill_supplier"')
+                        dido_list()
 
-                # add ODL info from database
-                leveranciers = load_supplier_odl(leverancier_config, project_name, odl_server_config)
+                    # create SQL to create tables
+                    meta_table = dc.load_odl_table(table_name = 'bronbestand_attribuut_meta_description',
+                                            server_config = odl_server_config)
 
-                # check if the tables exist in the database and warn the user if such is the case
-                #@@@@@
-                presence, any_present = test_for_existing_tables(project_name, leveranciers, data_server_config)
-                if any_present:
-                    logger.warning('!!! Er bestaan al tabellen, deze moeten eerst worden vernietigd met "dido_kill_supplier"')
-                    dido_list()
+                    write_sql(project_name, sqlfile, leverancier_config, meta_table, db_servers)
 
-                # create SQL to create tables
-                meta_table = dc.load_odl_table(table_name = 'bronbestand_attribuut_meta_description',
-                                        server_config = odl_server_config)
-
-                write_sql(project_name, sqlfile, leverancier_config, meta_table, db_servers)
-
-                # create documentation
-                write_markdown_doc(docfile, leverancier_config, write_columns)
-
+                    # create documentation
+                    write_markdown_doc(docfile, leverancier_config, write_columns)
+                # for
             # for
         # with
 

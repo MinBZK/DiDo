@@ -900,7 +900,7 @@ def get_table_names(project_name: str, supplier: str, postfix: str = 'data') -> 
 ### get_table_names ###
 
 
-def get_supplier_dict(config: dict, supplier: str, delivery):
+def get_supplier_projects(config: dict, supplier: str, delivery):
     """ Returns supplier s info from supplier.
 
         The relevant delivery info is copied and all info about deliveries
@@ -914,83 +914,49 @@ def get_supplier_dict(config: dict, supplier: str, delivery):
     Returns:
         dict: dictionary of supplier addjusted with correct delivery
     """
-    flag = False
+    errors = False
+    project_name = config['PROJECT_NAME']
     suppliers = config['SUPPLIERS']
     leverancier = suppliers[supplier].copy()
-    leverancier['config'] = config
-    leverancier['supplier_id'] = supplier
-    indices = []
-    chosen = '*'
-    delivery_configs = {}
-    deliveries = []
 
-    # find all deliveries in the config dictionary
-    # store in delivery_configs
-    for key in leverancier.keys():
-        # delivery is identified by 'delivery' in the key
-        if 'delivery' in key:
-            indices.append(key)
+    # test if supplier contains projects
+    projects = {}
+    n_projects = sum([1 if 'project_' in key else 0 for key in leverancier.keys()])
 
-            # format is delivery-<int> or delivery-*, identify delivery seq
-            splits = key.split('-')
+    # old style projects: no projects means al is one project (project_name)
+    if n_projects == 0:
+        projects[project_name] = leverancier.copy()
 
-            # correct delivery key has just two parts
-            if len(splits) == 2:
+    # project found, only statements just below supplier are projects
+    elif n_projects == len(leverancier.keys()):
+        for proj in leverancier.keys():
+            part_1, part_2 = proj.split('_', 1)
 
-                # It is the second part we need; when it is a uint
-                if splits[1].isdigit():
-                    seq = int(splits[1])
-                    delivery_configs[str(splits[1])] = leverancier[key]
-                    delivery_configs[str(splits[1])]['delivery_naam'] = key
-                    delivery_configs[str(splits[1])]['delivery_keus'] = ''
-
-                # or just *
-                elif splits[1] == '*':
-                    delivery_configs[str(splits[1])] = leverancier[key]
-                    delivery_configs[str(splits[1])]['delivery_naam'] = key
-                    delivery_configs[str(splits[1])]['delivery_keus'] = ''
-
-                else:
-                    logger.error(f'*** Delivery {key} is not a valid delivery')
-                    flag = True
-
-                # if
+            if len(part_2) == 0:
+                errors = True
+                logger.critical(f'Empty project part for project {proj}')
+            else:
+                projects[part_2] = leverancier[proj].copy()
             # if
-        # if
-    # for
+        # for
 
-    # all deliveries are stored in delivery_configs
-    if len(delivery_configs) > 0:
-        # identify which delivery applies
-        delivery_index = str(delivery)
+    # confusing situation: not allowed. Either all statements are a projects
+    # (just below the supplier) or there is no project statement at all
+    else:
+        errors = True
 
-        # when deliveries are applied, there must always be a catc-all delivery
-        if '*' not in delivery_configs.keys():
-            logger.error('*** delivery-* must be specified when specifying deliveries')
-            flag = True
-
-        elif delivery_index in delivery_configs.keys():
-            delivery_configs[delivery_index]['delivery_keus'] = 'x'
-            for key in delivery_configs[delivery_index]:
-                leverancier[key] = delivery_configs[delivery_index][key]
-
-        elif '*' in delivery_configs.keys():
-            delivery_configs['*']['delivery_keus'] = 'x'
-            for key in delivery_configs['*']:
-                leverancier[key] = delivery_configs['*'][key]
-
-        # if
     # if
 
-    # set default when key is lacking
+    if errors:
+        logger.critical('*** Config.yaml either contains no project or only projects')
+        raise DiDoError('*** Correct this error and try again')
 
-    if flag:
-        raise DiDoError('Errors in delivery specification.')
+    # if
 
-    for key in indices:
-        leverancier.pop(key)
+    leverancier['config'] = config
+    leverancier['supplier_id'] = supplier
 
-    return leverancier, delivery_configs
+    return leverancier, projects
 
 ### get_supplier_dict ###
 

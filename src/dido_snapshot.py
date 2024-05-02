@@ -16,7 +16,7 @@ import simple_table
 from dido_common import DiDoError
 
 from dido_common import read_cli, read_config, load_odl_table, load_schema, \
-    display_dido_header, get_server, get_table_names, get_supplier_dict, \
+    display_dido_header, get_server, get_table_names, get_supplier_projects, \
     get_current_delivery_seq, get_par, load_parameters, load_sql, load_pgpass, \
     get_par, get_par_par, create_data_types
 
@@ -88,7 +88,7 @@ def dido_snapshot(header: str):
             count = get_current_delivery_seq(project_name, leverancier_id, data_server_config)
             delivery_seq = count + 1
             logger.info(f'Current delivery is {delivery_seq}')
-            leverancier_config, deliveries = get_supplier_dict(config_dict, leverancier_id, delivery_seq)
+            leverancier_config, deliveries = get_supplier_projects(config_dict, leverancier_id, delivery_seq)
 
             if len(deliveries) > 0:
                 logger.info('Delivery configs supplied in config.yaml (x = chosen)')

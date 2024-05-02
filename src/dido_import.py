@@ -15,7 +15,7 @@ import mutate
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
-# pylint: disable=pointless-string-statement
+# pylint: disable=pointless-string-statement, consider-using-dict-items
 
 # show all columns of dataframe
 pd.set_option('display.max_columns', None)
@@ -731,20 +731,20 @@ def generate_statistics(data: pd.DataFrame,
                   plot_pad: str,
                   limit: int,
                  ):
-        sql = ''
+        txt = ''
         freqs = variable.value_counts().sort_values(ascending = False)
-        # print(freqs)
+
         total = freqs.sum()
         if 1 < len(freqs) <= limit:
             db_freqs = st.query_to_dataframe(query, sql_server_config = db_servers['DATA_SERVER_CONFIG'])
-            results = {'err': ['-', '-', '-']}
+            results = {} # 'err': ['-', '-', '-']}
             if db_freqs is not None:
                 db_freqs[var_name] = db_freqs[var_name].astype(str).str.replace('-', '')
                 db_freqs = db_freqs.set_index(var_name)
 
-                sql += f'\n**Frequency distribution of {len(freqs)} categories for {var_name}**\n\n'
-                sql += '| Category | Absolute | Delivery % | Database % |\n'
-                sql += '| -------- | -------- | ---------- | ---------- |\n'
+                txt += f'\n**Frequency distribution of {len(freqs)} categories for {var_name}**\n\n'
+                txt += '| Category | Absolute | Delivery % | Database % |\n'
+                txt += '| -------- | -------- | ---------- | ---------- |\n'
 
                 for idx, value in freqs.items():
                     results[idx] = [f'{value}', f'{100 * value / total:.2f}', '']
@@ -765,7 +765,7 @@ def generate_statistics(data: pd.DataFrame,
 
             for key in results.keys():
                 s = results[key]
-                sql += f'| {key} | {s[0]} | {s[1]} | {s[2]} |\n'
+                txt += f'| {key} | {s[0]} | {s[1]} | {s[2]} |\n'
 
             # for
 
@@ -789,18 +789,11 @@ def generate_statistics(data: pd.DataFrame,
             """
 
         else:
-            sql += f'\nTotal of {len(freqs)} categories thereby not in range [2..{limit}], ignored.\n\n'
+            txt += f'\nTotal of {len(freqs)} categories thereby not in range [2..{limit}], ignored.\n\n'
 
         # if
 
-        if db_stats is None:
-            logger.info(f'Frequencies for {var_name}')
-
-        else:
-            logger.info(f'Statistics for {var_name}, median = {db_stats.loc[0, "median"]:.2f},'
-                        f's.d. = {db_stats.loc[0, "std"]:.2f}')
-
-        return sql
+        return txt
 
     ### get_freqs ###
 
@@ -811,7 +804,7 @@ def generate_statistics(data: pd.DataFrame,
     extra_cols = extra_schema['kolomnaam'].tolist()
     work_dir = dc.get_par_par(supplier_config, 'config', 'WORK_DIR', '')
     plot_pad = os.path.join(work_dir, 'images')
-    md = '\n### Statistics\n\n'
+    md = '\n**Statistics**\n\n'
 
     logger.info('')
     logger.info('[Generating statistics]')
@@ -865,19 +858,25 @@ def generate_statistics(data: pd.DataFrame,
 
             # write statistics
             misdats = column.isna().sum()
-            dbval = stats.loc[0, 'n']
+            dbval = '.n.a.' if stats is None else stats.loc[0, 'n']
+            dbval = 'n.a.' if dbval is None else dbval
             md += f'| N | {len(column)} | {dbval} |\n'
-            dbval = stats.loc[0, 'misdat']
+
+            dbval = 'n.a.' if stats is None else stats.loc[0, 'misdat']
+            dbval = 'n.a.' if dbval is None else dbval
             md += f'| Missing data | {misdats} | {dbval} |\n'
+
             # write markdown info
             for idx, value in moments.items():
-                dbval = stats.loc[0, idx]
-                md += f'| {idx} | {value:.2f} | {dbval:.2f} |  \n'
+                dbval = None if stats is None else stats.loc[0, idx]
+                if dbval is None:
+                    md += f'| {idx} | {value:.2f} | n.a. |  \n'
+                else:
+                    md += f'| {idx} | {value:.2f} | {dbval:.2f} |  \n'
 
             # for
 
-            logger.info(f'Statistics for {col_name}, median = {stats.loc[0, "median"]:.2f}, '
-                        f's.d. = {stats.loc[0, "std"]:.2f}')
+            logger.info(f'Statistics for computed for {col_name}')
 
         # if
 
@@ -922,7 +921,9 @@ def create_markdown(data: pd.DataFrame,
     pad, fn, ext = dc.split_filename(filename)
     rapportageperiode = pakbon_record.iloc[0].loc[dc.ODL_LEVERING_FREK]
 
-    md = create_markdown_report(
+    md = f'# Supplier: {supplier_id}\n## Project: {project_name}\n'
+
+    md += create_markdown_report(
         report = report,
         rapportageperiode = rapportageperiode,
         project_name = project_name,
@@ -991,12 +992,11 @@ def create_markdown_report(report:pd.DataFrame,
     dido_date = odl_meta_data.loc[0, 'dido_version_patch_date']
 
     # For markdown: two spaces at end if line garantees a newline
-    md = f'# Project: {project_name}\n## Leverancier: {supplier_id}\n'
-    md += f'**Levering voor rapportageperiode: {rapportageperiode}**  \n'
-    md += f'Data ingelezen van file: {filename}  \n\n'
-    md += f'Tijdstip van inlezen: {datetime.now().strftime(dc.DATETIME_FORMAT)}  \n'
-    md += f'DiDo versie: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n'
-    md += f'ODL versie: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n'
+    md = f'### Rapportageperiode: {rapportageperiode}\n'
+    md += f'File processed: {filename}  \n\n'
+    md += f'Timestamp: {datetime.now().strftime(dc.DATETIME_FORMAT)}  \n'
+    md += f'DiDo version: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n'
+    md += f'ODL version: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n'
 
     # write markdown table header
     for col in report.columns:
