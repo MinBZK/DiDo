@@ -456,12 +456,14 @@ def evaluate_headers(data: pd.DataFrame,
         errors = True
         logger.error('Number of columns do not match')
 
-        logger.info('Header columns not in schema:')
+        logger.info('')
+        logger.info('*** Header columns not in schema:')
         for col in header_columns:
             if col not in schema_columns:
                 logger.info(col)
 
-        logger.info('Data dictionary columns not in headers:')
+        logger.info('')
+        logger.info('*** Data dictionary columns not in headers:')
         for col in schema_columns:
             if col not in header_columns:
                 logger.info(col)
@@ -1060,23 +1062,11 @@ def dido_data_prep(header: str):
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    # columns_to_write = config_dict['COLUMNS']
-    # table_desc = config_dict['TABLES']
-    # report_periods = config_dict['REPORT_PERIODS']
 
-    # renames = dc.get_par(delivery_config, 'RENAME_DATA', None)
-    # strip_space = dc.get_par(delivery_config, 'STRIP_SPACE', None)
-    # headers = dc.get_par(delivery_config, 'HEADERS', {})
     overwrite = dc.get_par(delivery_config, 'ENFORCE_PREP_IF_TABLE_EXISTS', False)
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
-    # odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    # data_server_config = db_servers['DATA_SERVER_CONFIG']
-    # foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
-
-    # sql_filename = os.path.join(work_dir, 'sql', 'create-tables.sql')
-    # doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
 
     # select which suppliers to process
     suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')

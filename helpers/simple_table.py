@@ -217,11 +217,12 @@ def sql_select(table_name: str = '',
 
     logger.debug('SQL query built: ' + sql_query)
 
-    query_result = pd.read_sql_query(con = engine.connect(),
-                                     sql = sqlalchemy.text(sql_query))
+    # read_sql_query does not close the connection and generates an error
+    # when repeatedly called. Wrap in with statement to work miracles
+    with engine.connect() as connection:
+        query_result = pd.read_sql_query(con = connection, # engine.connect(),
+                                        sql = sqlalchemy.text(sql_query))
 
-
-    # print(query_result)
 
     return query_result
 
