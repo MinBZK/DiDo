@@ -74,8 +74,6 @@ def check_null_iter(data: pd.DataFrame,
     if 'NOT NULL' in schema.loc[column, 'constraints']:
         col_index = data.columns.get_loc(column)
 
-        # print('++report++\n', report)
-        # print('++row++', report.iloc[0].loc['check_null'])
         for row in range(len(data)):
             # test if an error was already reported, further checks are not very useful
             if len(report) < 1 or report.iloc[row][column] != 0:
@@ -684,7 +682,6 @@ def check_all(data: pd.DataFrame,
                 data = data,
                 schema = schema,
                 report = report,
-                # messages = messages,
                 max_errors = max_errors,
                 total_errors = total_errors
             )
@@ -697,7 +694,6 @@ def check_all(data: pd.DataFrame,
     else:
         report = add_error(
             report = report,
-            # mess = messages,
             row = 0,
             col = 0,
             col_name = 'Overall message',
@@ -709,7 +705,7 @@ def check_all(data: pd.DataFrame,
 
     # if
 
-    report = add_error(report, 0, 0, '', -1, f'{len(report)} fouten gevonden')
+    report = add_error(report, 0, 0, '', -1, f'{len(report)} errors found')
 
     return report, total_errors
 
@@ -731,33 +727,40 @@ def generate_statistics(data: pd.DataFrame,
                   plot_pad: str,
                   limit: int,
                  ):
-        txt = ''
+        txt = f'\n\n<ins>Frequency</ins>  \n\n'
         freqs = variable.value_counts().sort_values(ascending = False)
 
         total = freqs.sum()
         if 1 < len(freqs) <= limit:
+            db_freqs = None
+            # if not empty_db:
             db_freqs = st.query_to_dataframe(query, sql_server_config = db_servers['DATA_SERVER_CONFIG'])
+
             results = {} # 'err': ['-', '-', '-']}
             if db_freqs is not None:
                 db_freqs[var_name] = db_freqs[var_name].astype(str).str.replace('-', '')
                 db_freqs = db_freqs.set_index(var_name)
 
-                txt += f'\n**Frequency distribution of {len(freqs)} categories for {var_name}**\n\n'
-                txt += '| Category | Absolute | Delivery % | Database % |\n'
-                txt += '| -------- | -------- | ---------- | ---------- |\n'
+            # if var_name == 'ovljjjj':
+            #     print(freqs)
+            #     print(db_freqs)
 
-                for idx, value in freqs.items():
-                    results[idx] = [f'{value}', f'{100 * value / total:.2f}', '']
+            txt += f'Distribution of {len(freqs)} categories for {var_name}  \n\n'
+            txt += '| Category | Absolute | Delivery % | Database % |\n'
+            txt += '| -------- | -------- | ---------- | ---------- |\n'
 
+            for idx, value in freqs.items():
+                results[idx] = [f'{value}', f'{100 * value / total:.2f}', 'Missing']
+
+            if db_freqs is not None:
                 for idx, row in db_freqs.iterrows():
                     value = row['percent_total']
 
                     if idx in results.keys():
-                        # print('...', value)
                         results[idx][2] = f'{value:.2f}'
 
                     else:
-                        results[idx] = ['', '', f'{value:.2f}']
+                        results[idx] = ['Missing', 'n.a.', f'{value:.2f}']
 
                     # if
                 # for
@@ -789,9 +792,10 @@ def generate_statistics(data: pd.DataFrame,
             """
 
         else:
-            txt += f'\nTotal of {len(freqs)} categories thereby not in range [2..{limit}], ignored.\n\n'
+            txt += f'\nTotal of {len(freqs)} categories not in range [2..{limit}], ignored.\n\n'
 
         # if
+    # if
 
         return txt
 
@@ -804,10 +808,31 @@ def generate_statistics(data: pd.DataFrame,
     extra_cols = extra_schema['kolomnaam'].tolist()
     work_dir = dc.get_par_par(supplier_config, 'config', 'WORK_DIR', '')
     plot_pad = os.path.join(work_dir, 'images')
-    md = '\n**Statistics**\n\n'
+    md = ''
+
+    # get deliveries and counts
+    # prepare the queries to fetch statistics from the database
+    db_col = {'schema': schema, 'table': table}
+    query = dc.DB_SHOWD.format(**db_col)
+    db_delivs = st.query_to_dataframe(query, sql_server_config = db_servers['DATA_SERVER_CONFIG'])
+    md += f'\n\n**Deliveries in table {table}**  \n\n'
+
+    if len(db_delivs) > 0: # is not None:
+        md += '| Period | Count |  \n'
+        md += '| ------ | ----- |  \n'
+        for idx in db_delivs.index:
+            prd = db_delivs.loc[idx, "levering_rapportageperiode"]
+            cnt = db_delivs.loc[idx, "count"]
+            md += f'| {prd} | {cnt} |  \n'
+
+    else:
+        md += 'Table contains no deliveries  \n'
+
 
     logger.info('')
     logger.info('[Generating statistics]')
+
+    md += '\n\n**Statistics**\n\n'
 
     # get which types are reals and integers
     reals = supplier_config['config']['PARAMETERS']['SUB_TYPES']['real']
@@ -828,8 +853,8 @@ def generate_statistics(data: pd.DataFrame,
 
         # setup the markdown variable for this column
         dt = data_schema.loc[col_name, 'datatype']
-        md += '----\n'
-        md += f'**Statistic analysis for column {col_name} ({dt})**  \n\n'
+        md += '\n---  \n'
+        md += f'*Analysis for column {col_name} ({dt})*  \n\n'
 
         # prepare the queries to fetch statistics from the database
         db_col = {'column': col_name, 'schema': schema, 'table': table}
@@ -847,10 +872,10 @@ def generate_statistics(data: pd.DataFrame,
             # if
 
             stats = st.query_to_dataframe(db_stats, sql_server_config = db_servers['DATA_SERVER_CONFIG'])
-
+            empty_db = stats.loc[0, 'n'] == 0 and stats.loc[0, 'misdat'] is None
             moments = column.agg(['min', 'max', 'mean', 'median', 'std'])
 
-            md += f'\n**Statistics for {col_name}**  \n\n'
+            md += f'\n<ins>Statistics for {col_name}</ins>  \n\n'
 
             # write markdown table header
             md += '| Statistic | Delivery | Database |  \n'
@@ -858,18 +883,18 @@ def generate_statistics(data: pd.DataFrame,
 
             # write statistics
             misdats = column.isna().sum()
-            dbval = '.n.a.' if stats is None else stats.loc[0, 'n']
-            dbval = 'n.a.' if dbval is None else dbval
+            dbval = 'n.a.' if empty_db else stats.loc[0, 'n']
+            # dbval = 'n.a.' if empty_db else dbval
             md += f'| N | {len(column)} | {dbval} |\n'
 
             dbval = 'n.a.' if stats is None else stats.loc[0, 'misdat']
-            dbval = 'n.a.' if dbval is None else dbval
+            # dbval = 'n.a.' if dbval is None else dbval
             md += f'| Missing data | {misdats} | {dbval} |\n'
 
             # write markdown info
             for idx, value in moments.items():
-                dbval = None if stats is None else stats.loc[0, idx]
-                if dbval is None:
+                dbval = None if empty_db else stats.loc[0, idx]
+                if empty_db:
                     md += f'| {idx} | {value:.2f} | n.a. |  \n'
                 else:
                     md += f'| {idx} | {value:.2f} | {dbval:.2f} |  \n'
@@ -921,10 +946,17 @@ def create_markdown(data: pd.DataFrame,
     pad, fn, ext = dc.split_filename(filename)
     rapportageperiode = pakbon_record.iloc[0].loc[dc.ODL_LEVERING_FREK]
 
-    md = f'# Supplier: {supplier_id}\n## Project: {project_name}\n'
+    md = f'\n# {rapportageperiode}  \n'
+    md += '**Properties**  \n'
+    md += '| Property | Value |  \n'
+    md += '| -------- | ----- |  \n'
+    md += f'| Project | {project_name} |  \n'
+    md += f'| Supplier | {supplier_id} |  \n'
 
     md += create_markdown_report(
+        data = data,
         report = report,
+        table = table,
         rapportageperiode = rapportageperiode,
         project_name = project_name,
         supplier_config = supplier_config,
@@ -957,7 +989,9 @@ def create_markdown(data: pd.DataFrame,
 ### create_markdown ###
 
 
-def create_markdown_report(report:pd.DataFrame,
+def create_markdown_report(data: pd.DataFrame,
+                           report: pd.DataFrame,
+                           table: str,
                            rapportageperiode: str,
                            project_name: str,
                            supplier_config: dict,
@@ -992,11 +1026,13 @@ def create_markdown_report(report:pd.DataFrame,
     dido_date = odl_meta_data.loc[0, 'dido_version_patch_date']
 
     # For markdown: two spaces at end if line garantees a newline
-    md = f'### Rapportageperiode: {rapportageperiode}\n'
-    md += f'File processed: {filename}  \n\n'
-    md += f'Timestamp: {datetime.now().strftime(dc.DATETIME_FORMAT)}  \n'
-    md += f'DiDo version: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n'
-    md += f'ODL version: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n'
+    md = ''
+    # md = f'### Rapportageperiode: {rapportageperiode}\n'
+    md += f'| File processed | {filename} |  \n'
+    md += f'| # Records | {len(data)} |  \n'
+    md += f'| Timestamp | {datetime.now().strftime(dc.DATETIME_FORMAT)} |  \n'
+    md += f'| Version DiDo | {major_dido}.{minor_dido}.{patch_dido} ({dido_date}) |  \n'
+    md += f'| Version ODL | {major_odl}.{minor_odl}.{patch_odl} ({odl_date}) |  \n\n'
 
     # write markdown table header
     for col in report.columns:
@@ -1119,8 +1155,6 @@ def create_supply_sql(pakbon_record: pd.DataFrame,
         counter += 1
 
     sql = sql [:-2] + ';\n\n'
-
-    # print(sql)
 
     return sql
 
@@ -1910,11 +1944,13 @@ def prepare_delivery_note(meta_data: pd.DataFrame,
 
     # Check code_bronbestand
     code_bronbestand = meta_data.iloc[0].loc[dc.ODL_CODE_BRONBESTAND]
+
     try:
         code_sourcefile = supplier_config[dc.ODL_CODE_BRONBESTAND]
 
     except KeyError:
-        raise DiDoError(f'There is no "{dc.ODL_CODE_BRONBESTAND}" in the delivery.yaml file')
+        logger.critical(f'There is no "{dc.ODL_CODE_BRONBESTAND}" in the delivery.yaml file')
+        raise DiDoError('A common error is mixing "-" and "_" characters')
 
     # try..except
 
