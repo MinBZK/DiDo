@@ -100,6 +100,11 @@ DATE_FORMAT = '%Y-%m-%d'
 TIME_FORMAT = '%H:%M:%S'
 DATETIME_FORMAT = f'{DATE_FORMAT} {TIME_FORMAT}'
 
+# Get deliveries and count of all deliveries in database
+DB_SHOWD = """SELECT {schema}.{table}.levering_rapportageperiode, count(levering_rapportageperiode)
+ FROM {schema}.{table}
+ GROUP BY {schema}.{table}.levering_rapportageperiode;
+ """
 # Statitics from database
 DB_STATS = """SELECT  count({column}) AS n,
         sum(CASE WHEN {column} IS NULL THEN 1 ELSE 0 END) AS misdat,
@@ -112,10 +117,11 @@ FROM {schema}.{table};
 """
 
 DB_FREQS = """SELECT {table}.{column}, 100 * (count(*) / tablestat.total::float) AS percent_total
-FROM odl.{table}
-CROSS JOIN (SELECT count(*) AS total FROM {schema}.{table}) AS tablestat
-GROUP BY tablestat.total, {schema}.{table}.{column}
-ORDER BY percent_total DESC;
+ FROM {schema}.{table}
+ CROSS JOIN (SELECT count(*) AS total FROM {schema}.{table}) AS tablestat
+ WHERE {schema}.{table}.{column} IS NOT NULL
+ GROUP BY tablestat.total, {schema}.{table}.{column}
+ ORDER BY percent_total DESC;
 """
 
 
