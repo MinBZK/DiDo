@@ -793,6 +793,18 @@ def display_dido_header(text: str = None, config = None):
 ### display_dido_header ###
 
 
+def subheader(text: str, char: str):
+    text = 3 * char + ' ' + text + ' ' + 3 * char
+    logger.info('')
+    logger.info(len(text) * char)
+    logger.info(text)
+    logger.info(len(text) * char)
+    logger.info('')
+
+    return
+### subheader ###
+
+
 def get_limits(config: dict):
     """ Read LIMITS
 
@@ -906,7 +918,7 @@ def get_table_names(project_name: str, supplier: str, postfix: str = 'data') -> 
 ### get_table_names ###
 
 
-def get_supplier_projects(config: dict, supplier: str, delivery):
+def get_supplier_projects(config: dict, supplier: str, delivery, keyword: str):
     """ Returns supplier s info from supplier.
 
         The relevant delivery info is copied and all info about deliveries
@@ -922,7 +934,7 @@ def get_supplier_projects(config: dict, supplier: str, delivery):
     """
     errors = False
     project_name = config['PROJECT_NAME']
-    suppliers = config['SUPPLIERS']
+    suppliers = config[keyword]
     leverancier = suppliers[supplier].copy()
 
     # test if supplier contains projects
@@ -1017,13 +1029,13 @@ def get_current_delivery_seq(project_name: str, supplier: str, server_config: di
 ### get_current_delivery_seq ###
 
 
-def report_psql_use(table: str, servers: dict, tables_exist: bool):
+def report_psql_use(table: str, servers: dict, tables_exist: bool, overwrite: bool):
     """ Reports to a user he shoukld use psql. The correct command is displayed
 
     Args:
         table (str): name of the fiole containing the SQL instructions
         servers (dict): dictionary of server configurations
-        tables_exist (bool): True if tablkes already exist, else False
+        tables_exist (bool): True if tables already exist, else False
     """
     host = servers['DATA_SERVER_CONFIG']['POSTGRES_HOST']
     user = servers['DATA_SERVER_CONFIG']['POSTGRES_USER']
@@ -1040,9 +1052,14 @@ def report_psql_use(table: str, servers: dict, tables_exist: bool):
 
     if tables_exist:
         logger.info('')
-        logger.error('*** You have been warned that the tables you want to create already exist.')
-        logger.error('*** If you really want to recreate these tables, thereby erasing current contents')
-        logger.error('*** run dido_kill_supplier.py ***')
+        logger.error('*** You have been warned that the tables you want to create already exists.')
+        if overwrite:
+            logger.error('*** Current tables including contents will be deleted ***')
+            logger.error('*** Be sure that is what you wish ***')
+
+        else:
+            logger.error('*** If you really want to recreate these tables, thereby erasing current contents')
+            logger.error('*** run dido_kill_supplier.py ***')
 
     logger.info('')
 
