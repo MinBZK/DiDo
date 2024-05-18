@@ -432,6 +432,9 @@ def evaluate_headers(data: pd.DataFrame,
         # if
     # if
 
+    # convert header_columns to list
+    header_columns = list(header_columns)
+
     # TODO: to strip the dido meta columns from the schema, simply the first
     # 6 columns are stripped. This should be derived from the extra_columns themselves
 
@@ -1086,8 +1089,9 @@ def dido_data_prep(header: str):
         dc.subheader(f'{leverancier_id}', '=')
 
         leverancier, projects = dc.get_supplier_projects(
-            config = config_dict,
+            config = delivery_config,
             supplier = leverancier_id,
+            project_name = project_name,
             delivery = leverancier_id,
             keyword = 'DELIVERIES',
         )
@@ -1097,17 +1101,12 @@ def dido_data_prep(header: str):
             project = projects[project_key]
 
             # get all cargo from the delivery_dict
-            # cargo_dict = dc.get_cargo(delivery_config, leverancier_id)
-            cargo_dict = dc.get_cargo(projects, project_key)
+            cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
+            # cargo_dict = dc.get_cargo(projects, project_key)
 
             # process all deliveries
             for cargo_name in cargo_dict.keys():
-                logger.info('')
-                print_name = f'--- Delivery {cargo_name} ---'
-                logger.info(len(print_name) * '-')
-                logger.info(print_name)
-                logger.info(len(print_name) * '-')
-                logger.info('')
+                dc.subheader(f'--- Delivery {cargo_name} ---', '.')
 
                 # get cargo associated with the cargo_name
                 cargo = cargo_dict[cargo_name]
@@ -1128,7 +1127,7 @@ def dido_data_prep(header: str):
                 # for
 
                 # delivery exists in the database. If so, skip this delivery
-                if dc.delivery_exists(cargo, leverancier_id, project_name, db_servers):
+                if dc.delivery_exists(cargo, leverancier_id, project_key, db_servers):
                     logger.info('')
                     logger.error(f'*** delivery already exists: '
                                 f'{leverancier_id} - {cargo_name}, skipped')
@@ -1147,7 +1146,7 @@ def dido_data_prep(header: str):
                 data_description = find_data_files(cargo, leverancier_id, root_dir)
                 cargo['data_description'] = data_description
 
-                prepare_one_delivery(cargo, leverancier_id, project_name, real_types)
+                prepare_one_delivery(cargo, leverancier_id, project_key, real_types)
 
             # for
     # for

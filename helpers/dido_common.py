@@ -918,7 +918,12 @@ def get_table_names(project_name: str, supplier: str, postfix: str = 'data') -> 
 ### get_table_names ###
 
 
-def get_supplier_projects(config: dict, supplier: str, delivery, keyword: str):
+def get_supplier_projects(config: dict,
+                          supplier: str,
+                          project_name: str,
+                          delivery,
+                          keyword: str,
+                         ):
     """ Returns supplier s info from supplier.
 
         The relevant delivery info is copied and all info about deliveries
@@ -933,7 +938,7 @@ def get_supplier_projects(config: dict, supplier: str, delivery, keyword: str):
         dict: dictionary of supplier addjusted with correct delivery
     """
     errors = False
-    project_name = config['PROJECT_NAME']
+    # project_name = config['PROJECT_NAME']
     suppliers = config[keyword]
     leverancier = suppliers[supplier].copy()
 
@@ -1006,8 +1011,11 @@ def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
 ### get_supplier_dict ###
 
 
-def get_cargo(cargo_config: dict, supplier: str):
-    cargo = cargo_config['DELIVERIES'][supplier]
+def get_cargo(cargo_config: dict, supplier: str, project_key: str):
+    if project_key is None or len(project_key) == 0:
+        cargo = cargo_config['DELIVERIES'][supplier]
+    else:
+        cargo = cargo_config['DELIVERIES'][supplier]['project_' + project_key]
 
     return cargo
 

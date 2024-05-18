@@ -483,16 +483,12 @@ def create_schema_from_pdirekt_datadict(filename: str, data_dict: dict):
 
         # for
     # if
-    # print(dd)
-    # print(df)
-    # df.to_csv('AAA.csv')
 
     # select rows where decimals > 0
     decs = (dd['DECIMALS'].astype('int') > 0)
 
     # set type these rows in df to numeric
     df.loc[decs, 'datatype'] = 'numeric'
-    # print(df)
 
     logger.info('')
 
@@ -801,12 +797,14 @@ def write_markdown_doc(project_name: str,
 ### write_markdown_doc ###
 
 
-def write_sql(project_name: str,
-              outfile: object,
+def write_sql(schema: pd.DataFrame,
+              meta_data: pd.DataFrame,
               supplier_config: dict,
+              supplier_id: str,
+              project_name: str,
               overwrite: bool,
-              template: pd.DataFrame,
               servers: dict,
+              sql_filename: str,
              ):
     """ Iterate over all elements in table and creates a data description
 
@@ -827,104 +825,108 @@ def write_sql(project_name: str,
     logger.info('[Writing SQL]')
     logger.info(f'>> Writing {supplier_id}')
 
-    # get the meta data, they are needed for saome operations
-    meta_data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['data']
-    for table_type in supplier_config[dc.TAG_TABLES]:
+    with open(sql_filename, encoding="utf8", mode='a') as outfile:
 
-        # get schema file
-        schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
-        data = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_DATA]
+        # get the meta data, they are needed for saome operations
+        # meta_data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['data']
+        for table_type in supplier_config['config'][dc.TAG_TABLES]:
 
-        # id data is not a dataframe, there is no data at all
-        if not isinstance(data, pd.DataFrame):
-            data = None
+            # get schema file
+            # schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
+            data = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_DATA]
 
-        # define the prototypical table name
-        table_name = dc.get_table_name(project_name, supplier_id, table_type, '')
+            # id data is not a dataframe, there is no data at all
+            if not isinstance(data, pd.DataFrame):
+                data = None
 
-        # create SQL for the description table
-        if supplier_config[dc.TAG_TABLES][table_type]['create_description']:
-            description_tag = table_name + 'description'
-            sql_code = create_table_description(
-                supplier_config = supplier_config,
-                table_type = table_type,
-                template = template,
-                schema_name = postgres_schema,
-                table_name = description_tag,
-                overwrite = overwrite,
-            )
+            # define the prototypical table name
+            table_name = dc.get_table_name(project_name, supplier_id, table_type, '')
 
-            # define the data for the description
-            sql_data = create_table_input(schema, schema,
-                                            '',
-                                            postgres_schema,
-                                            description_tag)
-            sql_code += sql_data
-
-        # create the data table if create_data is True
-        if supplier_config[dc.TAG_TABLES][table_type]['create_data']:
-
-            data_table_tag = table_name + dc.TAG_DATA
-            schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
-
-            # when meta, write the meta contents to the data table
-            data = None
-            if table_type == dc.TAG_TABLE_META:
-                data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
-
-            # when origin is omitted in config.yaml, supply the default (input: <file>)
-            if 'origin' in supplier_config:
-                origin = supplier_config['origin']
-
-            else:
-                origin = {'input': '<file>'}
-
-            if origin['input'] == '<table>' and table_type == dc.TAG_TABLE_SCHEMA:
-                logger.info(f'  > Creating description for table schema: {data_table_tag}')
-                if not 'table_name' in origin or origin['table_name'] == '':
-                    msg = 'No "table_name" was specified for origin in config.yaml'
-                    raise DiDoError(msg)
-
-                if not 'code_bronbestand' in origin or origin['code_bronbestand'] == '':
-                    origin['code_bronbestand'] = meta_data.iloc[-1].loc['code_bronbestand']
-
-                if not 'levering_rapportageperiode' in origin or origin['levering_rapportageperiode'] == '':
-                    olp = meta_data.iloc[-1].loc['bronbestand_datum_begin'][:4] + '-I'
-                    origin['levering_rapportageperiode'] = olp
-                    logger.warning(f'!Geen "levering rapportageperiode" in origin/config.yaml. {olp} verondersteld.')
-
-                servers['FOREIGN_SERVER_CONFIG']['table'] = origin['table_name']
-                servers['DATA_SERVER_CONFIG']['table'] = data_table_tag
-
-                logger.info(f'Schema:\n{schema}')
-
-                sql_code += use_existing_table(
-                    origin = origin,
-                    schema = schema,
-                    server_from = servers['FOREIGN_SERVER_CONFIG'],
-                    server_to = servers['DATA_SERVER_CONFIG'],
-                    odl_server = servers['ODL_SERVER_CONFIG'],
-                )
-                logger.info(f'  <table> {data_table_tag}')
-
-            else:
-                sql_code += create_table(
-                    schema = schema,
-                    data = data,
-                    table_name = data_table_tag,
-                    overwrite = overwrite,
-                    server_config = servers['DATA_SERVER_CONFIG'],
+            # create SQL for the description table
+            if supplier_config[dc.TAG_TABLES][table_type]['create_description']:
+                description_tag = table_name + 'description'
+                sql_code = create_table_description(
                     supplier_config = supplier_config,
+                    table_type = table_type,
+                    template = meta_data,
+                    schema_name = postgres_schema,
+                    table_name = description_tag,
+                    overwrite = overwrite,
                 )
 
-                logger.info(f'  <file> {data_table_tag} (default)')
+                # define the data for the description
+                sql_data = create_table_input(schema, schema,
+                                                '',
+                                                postgres_schema,
+                                                description_tag)
+                sql_code += sql_data
 
+            # create the data table if create_data is True
+            if supplier_config[dc.TAG_TABLES][table_type]['create_data']:
+
+                data_table_tag = table_name + dc.TAG_DATA
+                schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
+                # print('***', dc.TAG_TABLES, table_type, dc.TAG_TABLE_SCHEMA)
+                # print(schema['kolomnaam'])
+                # when meta, write the meta contents to the data table
+                data = None
+                if table_type == dc.TAG_TABLE_META:
+                    data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
+
+                # when origin is omitted in config.yaml, supply the default (input: <file>)
+                if 'origin' in supplier_config:
+                    origin = supplier_config['origin']
+
+                else:
+                    origin = {'input': '<file>'}
+
+                if origin['input'] == '<table>' and table_type == dc.TAG_TABLE_SCHEMA:
+                    logger.info(f'  > Creating description for table schema: {data_table_tag}')
+                    if not 'table_name' in origin or origin['table_name'] == '':
+                        msg = 'No "table_name" was specified for origin in config.yaml'
+                        raise DiDoError(msg)
+
+                    if not 'code_bronbestand' in origin or origin['code_bronbestand'] == '':
+                        origin['code_bronbestand'] = meta_data.iloc[-1].loc['code_bronbestand']
+
+                    if not 'levering_rapportageperiode' in origin or origin['levering_rapportageperiode'] == '':
+                        olp = meta_data.iloc[-1].loc['bronbestand_datum_begin'][:4] + '-I'
+                        origin['levering_rapportageperiode'] = olp
+                        logger.warning(f'!Geen "levering rapportageperiode" in origin/config.yaml. {olp} verondersteld.')
+
+                    servers['FOREIGN_SERVER_CONFIG']['table'] = origin['table_name']
+                    servers['DATA_SERVER_CONFIG']['table'] = data_table_tag
+
+                    logger.info(f'Schema:\n{schema}')
+
+                    sql_code += use_existing_table(
+                        origin = origin,
+                        schema = schema,
+                        server_from = servers['FOREIGN_SERVER_CONFIG'],
+                        server_to = servers['DATA_SERVER_CONFIG'],
+                        odl_server = servers['ODL_SERVER_CONFIG'],
+                    )
+                    logger.info(f'  <table> {data_table_tag}')
+
+                else:
+                    sql_code += create_table(
+                        schema = schema,
+                        data = data,
+                        table_name = data_table_tag,
+                        overwrite = overwrite,
+                        server_config = servers['DATA_SERVER_CONFIG'],
+                        supplier_config = supplier_config,
+                    )
+
+                    logger.info(f'  <file> {data_table_tag} (default)')
+
+                    # if
                 # if
-            # if
 
-        outfile.write(sql_code)
-        outfile.write('\n\n')
-    # for
+            outfile.write(sql_code)
+            outfile.write('\n\n')
+        # for -- tables
+    # with
 
     return
 
@@ -1657,9 +1659,14 @@ def dido_begin(config_dict: dict):
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
     columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
+    # table_desc = config_dict['TABLES']
+    # report_periods = config_dict['REPORT_PERIODS']
     use_of_batches = False
+    overwrite_tables = dc.get_par(config_dict, 'KILL_EXISTING_TABLES', False)
+
+    sql_filename = os.path.join(work_dir, 'sql', 'create-tables.sql')
+    doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
+    any_present = False
 
     # get data types
     data_types = dc.create_data_types()
@@ -1680,6 +1687,13 @@ def dido_begin(config_dict: dict):
     if suppliers_to_process == '*':
         suppliers_to_process = leveranciers.keys()
 
+    # write initial code to sqlfile, successie write_sql open the file in append mode
+    with open(sql_filename, encoding="utf8", mode='w') as sqlfile:
+        # create a transaction of tables creation
+        sqlfile.write('-- Quit immediately with exit code other than 0 when an error occurs\n')
+        sqlfile.write('\\set ON_ERROR_STOP true\n\n')
+        sqlfile.write('BEGIN; -- Transaction\n\n')
+
     # process each supplier
     for leverancier_id in suppliers_to_process:
         dc.subheader(f'Supplier {leverancier_id}', '=')
@@ -1687,8 +1701,9 @@ def dido_begin(config_dict: dict):
         leverancier, projects = dc.get_supplier_projects(
             config = config_dict,
             supplier = leverancier_id,
+            project_name = project_name,
             delivery = 1,
-            keyword = 'SUPPLIERS'
+            keyword = 'SUPPLIERS',
         )
 
         for project_key in projects:
@@ -1783,7 +1798,7 @@ def dido_begin(config_dict: dict):
                 logger.debug(f'[Input schema table: {table_name}]')
                 table_leverancier = fetch_schema_from_table(table_name, foreign_server_config)
                 schema_leverancier = merge_table_and_schema(table_leverancier, schema_leverancier)
-                logger.info(f'Origin is <table>, from {table_name}')
+                logger.info(f'Origin is <tabprintle>, from {table_name}')
 
             else:
                 raise DiDoError(f'*** Unknown origin input: { origin["input"]}. Only <file>, <table> or <api> allowed.')
@@ -1829,8 +1844,20 @@ def dido_begin(config_dict: dict):
                 logger.info('[Copying data file]')
                 shutil.copy2(fname_data_load, fname_data_save)
             # if
-        # for
-    # for
+
+            write_sql(
+                schema = schema_template,
+                meta_data = meta_leverancier,
+                supplier_config = leverancier,
+                supplier_id = leverancier_id,
+                project_name = project_key,
+                overwrite = overwrite_tables,
+                servers = db_servers,
+                sql_filename = sql_filename,
+            )
+
+        # for -- project
+    # for -- supplier
 
     return
 
@@ -1889,10 +1916,11 @@ def dido_create(config_dict: dict):
 
                 # count the number of deliveries and fetch sup[plier and delivery accordingly
                 delivery_seq = 1
-                logger.info(f'Dido_create applies always delivery {delivery_seq}')
+                logger.info(f'Dido_create always applies delivery {delivery_seq}')
                 leverancier_config, projects = dc.get_supplier_projects(
                     config = config_dict,
                     supplier = leverancier_id,
+                    project_name = project_name,
                     delivery = 1,
                     keyword = 'SUPPLIERS',
                 )
@@ -1908,8 +1936,8 @@ def dido_create(config_dict: dict):
                     # []
                     for table_key in table_desc.keys():
                         # COPY the table dictionary to the supplier dict,
-                        # else a shared reference will be copied; use copy() function
-                        leverancier_config[dc.TAG_TABLES][table_key]= table_desc[table_key].copy()
+                        # else a shared rprinteference will be copied; use copy() function
+                        leverancier_config[dc.TAG_TABLES][table_key] = table_desc[table_key].copy()
 
                         # copy all keys, as they are string, the are correctly copied
                         for key in table_desc[table_key].keys():
@@ -1928,7 +1956,7 @@ def dido_create(config_dict: dict):
                     #@@@@@
                     presence, any_present = test_for_existing_tables(project_key, leveranciers, data_server_config)
                     if any_present:
-                        logger.warning('!!! Er bestaan al tabellen, deze moeten eerst worden vernietigd met "dido_kill_supplier"')
+                        logger.warning('!!! Tables already exist, please destroy these using "dido_kill_supplier"')
                         dido_list()
 
                     # create SQL to create tables
@@ -1983,7 +2011,7 @@ def main():
 
     # create the tables
     dido_begin(config)
-    dido_create(config)
+    # dido_create(config)
 
     # quit with goodbye message
     cpu = time.time() - cpu

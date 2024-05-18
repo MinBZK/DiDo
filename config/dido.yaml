@@ -22,8 +22,8 @@ WORKDIR_STRUCTURE: docs,sql,schemas,todo,done,tmp,tests
 
 # versions
 DIDO_VERSION_MAJOR: 0
-DIDO_VERSION_MINOR: 7
-DIDO_VERSION_PATCH: 7
+DIDO_VERSION_MINOR: 8
+DIDO_VERSION_PATCH: 0
 
 SERVERS:
   datawarehouse_dev: 10.10.12.12
