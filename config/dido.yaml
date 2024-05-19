@@ -32,3 +32,48 @@ SERVERS:
 
 BEGINNING_OF_WORLD: 1970-01-01 00:00:00
 END_OF_WORLD: 9999-12-31 23:59:59
+
+###########################################
+# !!! DON'T CHANGE STUF BELOW THIS LINE !!!
+# tables to be created
+TABLES:
+  schema:
+    table_root: attribuut_meta
+    template: yes
+    comment: <odl>
+    schema: <self>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+
+  meta:
+    table_root: bestand_meta
+    template: meta
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+
+  datakwaliteit_feit:
+    table_root: datakwaliteit_feit
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+
+  levering_feit:
+    table_root: levering_feit
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+

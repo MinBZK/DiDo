@@ -7,7 +7,6 @@ dido_common.py is a library with common routines for DiDo.
 import os
 import re
 import sys
-import yaml
 import psutil
 import logging
 import argparse
@@ -17,8 +16,9 @@ import pandas as pd
 
 from datetime import datetime
 from logging.config import dictConfig
-from dotenv import load_dotenv
 from os.path import join, splitext, dirname, basename, exists
+
+import yaml
 
 import simple_table as st
 

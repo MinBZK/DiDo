@@ -205,7 +205,7 @@ def dido_list(header: str = None):
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
     columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
+    table_desc = config_dict['PARAMETERS']['TABLES']
     report_periods = config_dict['REPORT_PERIODS']
     parameters = config_dict['PARAMETERS']
 
