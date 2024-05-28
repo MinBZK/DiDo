@@ -1955,7 +1955,9 @@ def prepare_delivery_note(meta_data: pd.DataFrame,
     # try..except
 
     if code_sourcefile != code_bronbestand:
-        logger.error(f'*** "{dc.ODL_CODE_BRONBESTAND}" "{code_sourcefile}" does not match definition: "{code_bronbestand}"')
+        logger.error(f'*** Error in {dc.ODL_CODE_BRONBESTAND}: code specified '
+            f'in the delivery.yaml: "{code_sourcefile}" does not match the '
+            f'definition in the database: "{code_bronbestand}"')
         critical = True
 
     # assign maximum to top
@@ -2488,7 +2490,7 @@ def dido_import(header: str):
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
     columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
+    table_desc = config_dict['PARAMETERS']['TABLES']
     report_periods = config_dict['REPORT_PERIODS']
 
     create_zip = dc.get_par_par(delivery_config, 'SNAPSHOTS', 'zip', False)
@@ -2519,102 +2521,114 @@ def dido_import(header: str):
                 # sql_file.write(generate_sql_header())
                 sql_file.write('BEGIN; -- For all suppliers\n')
 
-                # copy table_desc as a template for information each leverancier has to deliver
+                # copy table_desc as a template for information each leverancier
+                # has to deliver
                 for leverancier_id in suppliers_to_process:
-                    logger.info('')
-                    logger.info(f'=== {leverancier_id} ===')
-                    logger.info('')
+                    dc.subheader(f'Supplier: {leverancier_id}', '=')
 
-                    # get all cargo from the delivery_dict
-                    cargo_dict = dc.get_cargo(delivery_config, leverancier_id)
+                    leverancier, projects = dc.get_supplier_projects(
+                        config = delivery_config,
+                        supplier = leverancier_id,
+                        project_name = project_name,
+                        delivery = leverancier_id,
+                        keyword = 'DELIVERIES',
+                    )
 
-                    # process all deliveries
-                    for cargo_name in cargo_dict.keys():
-                        logger.info('')
-                        print_name = f'--- Delivery {cargo_name} ---'
-                        logger.info(len(print_name) * '-')
-                        logger.info(print_name)
-                        logger.info(len(print_name) * '-')
-                        logger.info('')
+                    for project_key in projects.keys():
+                        dc.subheader(f'Project: {project_key}', '-')
+                        project = projects[project_key]
 
-                        # get cargo associated with the cargo_name
-                        cargo = cargo_dict[cargo_name]
-                        cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
+                        # get all cargo from the delivery_dict
+                        cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
+                        # cargo_dict = dc.get_cargo(projects, project_key)
 
-                        # add config and delivery dicts as they are needed while processing the cargo
-                        cargo['config'] = config_dict
-                        cargo['delivery'] = delivery_config
+                        # process all deliveries
+                        for cargo_name in cargo_dict.keys():
+                            dc.subheader(f'Delivery: {cargo_name}', '-')
 
-                        # present all deliveries and the selected one
-                        logger.info('Delivery configs supplied (> is selected)')
-                        for key in cargo_dict.keys():
-                            if key == cargo_name:
-                                logger.info(f" > {key}")
-                            else:
-                                logger.info(f" - {key}")
-                            # if
-                        # for
+                            # get cargo associated with the cargo_name
+                            cargo = cargo_dict[cargo_name]
+                            cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
 
-                        # check if delivery exists in the database. If so, skip this delivery
-                        if dc.delivery_exists(cargo, leverancier_id, project_name, db_servers):
-                            logger.info('')
-                            logger.error(f'*** delivery already exists: '
-                                         f'{leverancier_id} - {cargo_name}, skipped')
+                            # add config and delivery dicts as they are needed while processing the cargo
+                            cargo['config'] = config_dict
+                            cargo['delivery'] = delivery_config
 
-                            if not overwrite:
-                                logger.info('Specify ENFORCE_IMPORT_IF_TABLE_EXISTS: yes in your delivery.yaml')
-                                logger.info('if you wish to check the data quality')
-
-                                continue
-
-                            else:
-                                logger.warning('!!! ENFORCE_IMPORT_IF_TABLE_EXISTS: yes specified, '
-                                               'data will be overwritten')
-                            # if
-                        # if
-
-                        dc.report_ram('At beginning of loop')
-
-                        cargo[dc.TAG_TABLES] = {}
-
-                        for table_key in table_desc.keys():
-                            # COPY the table dictionary to the supplier dict, else a shared reference will be copied
-                            # to avoid sharing, use the .copy() function of the dictionary
-                            cargo[dc.TAG_TABLES][table_key] = table_desc[table_key].copy()
-
-                            # copy all keys, as they are string, they are correctly copied
-                            for key in table_desc[table_key].keys():
-                                cargo[dc.TAG_TABLES][table_key][key] = table_desc[table_key][key]
-
+                            # present all deliveries and the selected one
+                            logger.info('Delivery configs supplied (> is selected)')
+                            for key in cargo_dict.keys():
+                                if key == cargo_name:
+                                    logger.info(f" > {key}")
+                                else:
+                                    logger.info(f" - {key}")
+                                # if
                             # for
+
+                            # check if delivery exists in the database. If so, skip this delivery
+                            if dc.delivery_exists(cargo, leverancier_id, project_key, db_servers):
+                                logger.info('')
+                                logger.error(f'*** delivery already exists: '
+                                            f'{leverancier_id} - {cargo_name}, skipped')
+
+                                if not overwrite:
+                                    logger.info('Specify ENFORCE_IMPORT_IF_TABLE_EXISTS: yes in your delivery.yaml')
+                                    logger.info('if you wish to check the data quality')
+
+                                    continue
+
+                                else:
+                                    logger.warning('!!! ENFORCE_IMPORT_IF_TABLE_EXISTS: yes specified, '
+                                                'data will be overwritten')
+                                # if
+                            # if
+
+                            dc.report_ram('At beginning of loop')
+
+                            cargo[dc.TAG_TABLES] = {}
+
+                            for table_key in table_desc.keys():
+                                # COPY the table dictionary to  supplier dict,
+                                # else a shared reference will be copied
+                                # to avoid sharing, use the .copy() function
+                                cargo[dc.TAG_TABLES][table_key] = \
+                                    table_desc[table_key].copy()
+
+                                # copy all keys, as they are string,
+                                # they are correctly copied
+                                for key in table_desc[table_key].keys():
+                                    cargo[dc.TAG_TABLES][table_key][key] = \
+                                        table_desc[table_key][key]
+
+                                # for
+                            # for
+
+                            error_codes = dc.load_odl_table(
+                                table_name = 'bronbestand_datakwaliteit_codes_data',
+                                server_config = db_servers['ODL_SERVER_CONFIG']
+                            )
+
+                            error_codes = error_codes.set_index('code_datakwaliteit')
+
+                            # for each leverancier, like dji, fmh, etc. create documentation and
+                            # DDL generation files
+                            # iterate and process each data suplier
+                            origin = dc.get_par(cargo, 'origin', {'input': '<file>'})
+
+                            process_supplier(
+                                supplier_config = cargo,
+                                config = config_dict,
+                                error_codes = error_codes,
+                                project_name = project_key,
+                                origin = origin,
+                                workdir = work_dir,
+                                csv_file_object = csv_file,
+                                doc_file_object = doc_file,
+                                sql_file_object = sql_file,
+                                server_configs = db_servers,
+                            )
+
+                            dc.report_ram('At end of loop')
                         # for
-
-                        error_codes = dc.load_odl_table(
-                            table_name = 'bronbestand_datakwaliteit_codes_data',
-                            server_config = db_servers['ODL_SERVER_CONFIG']
-                        )
-
-                        error_codes = error_codes.set_index('code_datakwaliteit')
-
-                        # for each leverancier, like dji, fmh, etc. create documentation and
-                        # DDL generation files
-                        # iterate and process each data suplier
-                        origin = dc.get_par(cargo, 'origin', {'input': '<file>'})
-
-                        process_supplier(
-                            supplier_config = cargo,
-                            config = config_dict,
-                            error_codes = error_codes,
-                            project_name = project_name,
-                            origin = origin,
-                            workdir = work_dir,
-                            csv_file_object = csv_file,
-                            doc_file_object = doc_file,
-                            sql_file_object = sql_file,
-                            server_configs = db_servers,
-                        )
-
-                        dc.report_ram('At end of loop')
                     # for
                 # for
 
@@ -2623,7 +2637,12 @@ def dido_import(header: str):
         # with
     # with
 
-    dc.report_psql_use('import-all-deliveries', db_servers, False)
+    dc.report_psql_use(
+        table = 'import-all-deliveries',
+        servers = db_servers,
+        tables_exist = False,
+        overwrite = overwrite,
+    )
 
     cpu = time.time() - cpu
     logger.info('')

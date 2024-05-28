@@ -108,7 +108,7 @@ def get_leveranties(project_name: str, supplier: str, server_config: dict) -> di
     return tables_info
 
 
-def display_leveranciers(project_name: str, leveranciers: dict, data_server_config: dict):
+def display_leveranciers(leveranciers: dict, data_server_config: dict):
     """ Displays the supplies of of specific supplier
 
     Args:
@@ -123,11 +123,13 @@ def display_leveranciers(project_name: str, leveranciers: dict, data_server_conf
     leverancier_met_data = []
 
     for key in leveranciers.keys():
-        leveranties = get_leveranties(project_name, key, data_server_config)
-        if leveranties['schema']['records'] > 0:
-            leverancier_met_data.append(key)
+        supplier = leveranciers[key]
+        for project_name in supplier.keys()
+            leveranties = get_leveranties(project_name, key, data_server_config)
+            if leveranties['schema']['records'] > 0:
+                leverancier_met_data.append(key)
 
-            logger.info(f' - {key}')
+                logger.info(f' - {key}')
 
     return leverancier_met_data, leveranciers.keys()
 
@@ -200,7 +202,6 @@ def dido_list(header: str = None):
     foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
@@ -209,14 +210,14 @@ def dido_list(header: str = None):
     report_periods = config_dict['REPORT_PERIODS']
     parameters = config_dict['PARAMETERS']
 
-   # create the output file names
+    # create the output file names
     report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.csv')
     report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
     sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'remove-deliveries.sql')
 
     # if there is no supplier that received any supply, there is nothing to remove.
     # The program terminates
-    n_suppliers, suppliers = display_leveranciers(project_name, leveranciers, data_server_config)
+    n_suppliers, suppliers = display_leveranciers(leveranciers, leveranciers, data_server_config)
     if len(suppliers) < 1:
         logger.info('')
         logger.warning('Er zijn geen leveranciers of leveranties.')

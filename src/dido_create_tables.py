@@ -24,7 +24,7 @@ import dido_common as dc
 import simple_table as st
 
 from dido_common import DiDoError
-from dido_list import dido_list
+# from dido_list import dido_list
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
@@ -799,8 +799,7 @@ def write_markdown_doc(project_name: str,
 ### write_markdown_doc ###
 
 
-def write_sql(schema: pd.DataFrame,
-              meta_data: pd.DataFrame,
+def write_sql(meta_data: pd.DataFrame,
               supplier_config: dict,
               supplier_id: str,
               project_config: dict,
@@ -829,8 +828,6 @@ def write_sql(schema: pd.DataFrame,
     with open(sql_filename, encoding="utf8", mode='a') as outfile:
 
         # get the meta data, they are needed for saome operations
-        # meta_data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['data']
-        # print(supplier_config['tables']['meta']['data'])
         for table_type in supplier_config[dc.TAG_TABLES]:
 
             # get schema file
@@ -845,11 +842,6 @@ def write_sql(schema: pd.DataFrame,
 
             # define the prototypical table name
             table_name = dc.get_table_name(project_name, supplier_id, table_type, '')
-
-            # if table_type == 'meta':
-            #     print('xxxxxxxxxxxxxxxxxxxxxxx')
-            #     print(supplier_config['tables']['meta']['schema'])
-            #     print('')
 
             # create SQL for the description table
             if supplier_config[dc.TAG_TABLES][table_type]['create_description']:
@@ -921,6 +913,7 @@ def write_sql(schema: pd.DataFrame,
                         schema = schema,
                         data = data,
                         table_name = data_table_tag,
+                        project_name = project_name,
                         overwrite = overwrite,
                         server_config = servers['DATA_SERVER_CONFIG'],
                         supplier_config = supplier_config,
@@ -1212,6 +1205,7 @@ def create_primary_key(schema: pd.DataFrame,
 def create_table(schema: pd.DataFrame,
                  data: pd.DataFrame,
                  table_name: str,
+                 project_name: str,
                  overwrite: bool,
                  server_config: dict,
                  supplier_config: dict,
@@ -1234,19 +1228,18 @@ def create_table(schema: pd.DataFrame,
     table_comment = ''
     comments = ''
     schema_name = server_config['POSTGRES_SCHEMA']
-    print('===', table_name, '===')
 
     # create variable names and types based on schema
     for idx, row in schema.iterrows():
 
         line = f'   {row["kolomnaam"]} {row["datatype"]}'
-        print(line)
         if len(row['constraints']) > 0:
             line += ' ' + row['constraints']
 
         data_types += line + ',\n'
 
-        comment = f"COMMENT ON COLUMN {schema_name}.{table_name}.{row['kolomnaam']} IS "
+        comment = f"COMMENT ON COLUMN {schema_name}.{table_name}." \
+                  f"{row['kolomnaam']} IS "
         description = schema.loc[idx, 'beschrijving'].strip()
 
         if len(description) == 0:
@@ -1255,14 +1248,21 @@ def create_table(schema: pd.DataFrame,
         comment += f"$${description}$$;\n"
         comments += comment
 
-    names = dc.get_table_names(supplier_config['config']['PROJECT_NAME'], supplier_config['supplier_id'])
+    # for
+
+    names = dc.get_table_names(
+        project_name = project_name,
+        supplier = supplier_config['supplier_id'],
+    )
 
     # add primary key when defined
-    if 'primary_key' in supplier_config and table_name == names[dc.TAG_TABLE_SCHEMA]:
+    if 'primary_key' in supplier_config \
+        and table_name == names[dc.TAG_TABLE_SCHEMA]:
+
         primary_key = create_primary_key(schema, supplier_config)
         data_types += primary_key + ', '
 
-    # remove last comma and newline
+    # remove last comma and space
     data_types = data_types[:-2]
 
     # create a table definition and instruction to read starttabel.csv
@@ -1275,7 +1275,9 @@ def create_table(schema: pd.DataFrame,
     tbd += table_comment + comments + '\n\n'
 
     # look if a primary key has to be added to the data file
-    if 'index' in supplier_config and table_name == names[dc.TAG_TABLE_SCHEMA]:
+    if 'index' in supplier_config \
+        and table_name == names[dc.TAG_TABLE_SCHEMA]:
+
         sql_index = create_index(
             schema = schema,
             data = data,
@@ -1287,8 +1289,17 @@ def create_table(schema: pd.DataFrame,
         if len(sql_index) > 0:
             tbd += sql_index
 
+    # if
+
     if data is not None:
-        tbd += create_table_input(data, schema, '', schema_name, table_name)
+        tbd += create_table_input(
+            data = data,
+            schema = schema,
+            filename = '',
+            schema_name = schema_name,
+            table_name = table_name,
+        )
+    # if
 
     logger.debug(tbd)
 
@@ -1670,23 +1681,12 @@ def dido_begin(config_dict: dict):
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
     odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    data_server_config = db_servers['DATA_SERVER_CONFIG']
     foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['PARAMETERS']['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
-    use_of_batches = False
-    overwrite_tables = dc.get_par(config_dict, 'KILL_EXISTING_TABLES', False)
-
-    sql_filename = os.path.join(work_dir, 'sql', 'create-tables.sql')
-    doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
-    any_present = False
 
     # get data types
     data_types = dc.create_data_types()
@@ -1707,15 +1707,6 @@ def dido_begin(config_dict: dict):
     if suppliers_to_process == '*':
         suppliers_to_process = leveranciers.keys()
 
-    '''
-    # write initial code to sqlfile, successie write_sql open the file in append mode
-    with open(sql_filename, encoding="utf8", mode='w') as sqlfile:
-        # create a transaction of tables creation
-        sqlfile.write('-- Quit immediately with exit code other than 0 when an error occurs\n')
-        sqlfile.write('\\set ON_ERROR_STOP true\n\n')
-        sqlfile.write('BEGIN; -- Transaction\n\n')
-    '''
-
     # process each supplier
     for leverancier_id in suppliers_to_process:
         dc.subheader(f'Supplier {leverancier_id}', '=')
@@ -1723,7 +1714,6 @@ def dido_begin(config_dict: dict):
         leverancier, projects = dc.get_supplier_projects(
             config = config_dict,
             supplier = leverancier_id,
-            project_name = project_name,
             delivery = 1,
             keyword = 'SUPPLIERS',
         )
@@ -1738,16 +1728,6 @@ def dido_begin(config_dict: dict):
             # directory to save into work_dir
             dir_save = os.path.join(work_dir, 'schemas', leverancier_id)
 
-            # # when using batch, fetch source_file and data_dict from batch
-            # data_dict = ''
-            # if use_of_batches:
-            #     current_batch = leverancier['batch']['projects'][project]
-            #     source_file = dc.get_par(current_batch, 'schema_file', '')
-            #     data_dict = dc.get_par(current_batch, 'data_dict', '')
-
-            # else:
-            # source_file = leverancier['schema_file']
-            # data_dict = dc.get_par(leverancier, 'data_dictionary', {})
             source_file = project['schema_file']
             fname_schema_load = os.path.join(dir_load, source_file + '.schema.csv')
             data_dict = dc.get_par(project, 'data_dictionary', {})
@@ -1790,20 +1770,23 @@ def dido_begin(config_dict: dict):
             logger.debug(f'[Input schema file: {fname_schema_load}]')
             schema_leverancier = pd.read_csv(
                 fname_schema_load,
-                sep = ';', # r'\s*;\s*', # warning regular expression seps tend to ignore quoted data
+                sep = ';', # r'\s*;\s*', # warning regex seps ignore quoted data
                 dtype = str,
                 keep_default_na = False,
                 engine = 'python',
             ).fillna('')
 
             """
-            Origin is an option that indicates the origin of the data. The options are:
+            Origin is an option that indicates the origin of the data.
             <file>  - the data are delivered by file
-            <table> - the data are delived by a postgres table, only valid for initialization
-            <api>   - data are delived via an internet api, one time initialization and frequent updates
-                    when this option is specified, the connection is tested
+            <table> - the data are delived by a postgres table,
+                      only valid for initialization
+            <api>   - data are delived via an internet api,
+                      one time initialization and frequent updates
+                      when this option is specified, the connection is tested
 
-            Only <table> impacts dido_begin, all three impact dido_data_prep and dido_import
+            Only <table> impacts dido_begin, all three impact
+            dido_data_prep and dido_import
             """
 
             # fetch origin from config when present, else default to <file>
@@ -1820,16 +1803,34 @@ def dido_begin(config_dict: dict):
                 # fetch schema  from table
                 table_name = origin['table_name']
                 logger.debug(f'[Input schema table: {table_name}]')
-                table_leverancier = fetch_schema_from_table(table_name, foreign_server_config)
-                schema_leverancier = merge_table_and_schema(table_leverancier, schema_leverancier)
+                table_leverancier = fetch_schema_from_table(
+                    table_name = table_name,
+                    sql_server_config = foreign_server_config,
+                )
+                schema_leverancier = merge_table_and_schema(
+                    table = table_leverancier,
+                    schema = schema_leverancier,
+                )
                 logger.info(f'Origin is <tabprintle>, from {table_name}')
 
             else:
-                raise DiDoError(f'*** Unknown origin input: { origin["input"]}. Only <file>, <table> or <api> allowed.')
+                raise DiDoError(f'*** Unknown origin input: { origin["input"]}. '
+                                'Only <file>, <table> or <api> allowed.')
 
             logger.debug(schema_leverancier)
-            schema_leverancier = merge_bootstrap_data(schema_leverancier, dc.EXTRA_TEMPLATE, odl_server_config)
-            meta_leverancier = pd.read_csv(fname_meta_load, sep=';', dtype=str, keep_default_na=False)
+            schema_leverancier = merge_bootstrap_data(
+                schema = schema_leverancier,
+                table_name = dc.EXTRA_TEMPLATE,
+                server_config = odl_server_config,
+            )
+
+            meta_leverancier = pd.read_csv(
+                fname_meta_load,
+                sep = ';',
+                dtype = str,
+                keep_default_na = False,
+            )
+
             meta_leverancier = meta_leverancier.fillna('').set_index('attribuut')
 
             # load the data from the parameters table
@@ -1862,40 +1863,6 @@ def dido_begin(config_dict: dict):
             )
             meta_leverancier.to_csv(fname_meta_save, sep=';', index=True)
 
-            '''
-            # copy table info into leverancier_config
-            leverancier[dc.TAG_TABLES] = {}
-            for table_key in table_desc.keys():
-                # COPY the table dictionary to the supplier dict,
-                # else a shared rprinteference will be copied; use copy() function
-                leverancier[dc.TAG_TABLES][table_key] = table_desc[table_key].copy()
-
-                # copy all keys, as they are string, the are correctly copied
-                for key in table_desc[table_key].keys():
-                    leverancier[dc.TAG_TABLES][table_key][key] = table_desc[table_key][key]
-                # for
-            # for
-
-            # load schema and documentation files and add to leveranciers info
-            # leveranciers = load_supplier_schemas(leveranciers, root_dir, work_dir)
-            leveranciers = load_supplier_schemas(leverancier, root_dir, work_dir)
-
-            # add ODL info from database
-            leveranciers = load_supplier_odl(leverancier, project, odl_server_config)
-
-            # check if the tables exist in the database and warn the user if such is the case
-            presence, any_present = test_for_existing_tables(project_key, leveranciers, data_server_config)
-            if any_present:
-                logger.warning('!!! Tables already exist, please destroy these using "dido_kill_supplier"')
-                dido_list()
-
-            # if data file exists, load and store it
-            if os.path.exists(fname_data_load):
-                logger.info('[Copying data file]')
-                shutil.copy2(fname_data_load, fname_data_save)
-            # if
-            '''
-
         # for -- project
     # for -- supplier
 
@@ -1914,16 +1881,12 @@ def dido_create(config_dict: dict):
     db_servers = config_dict['SERVER_CONFIGS']
     odl_server_config = db_servers['ODL_SERVER_CONFIG']
     data_server_config = db_servers['DATA_SERVER_CONFIG']
-    foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
     table_desc = config_dict['PARAMETERS']['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
     write_columns = config_dict['COLUMNS']
     overwrite_tables = dc.get_par(config_dict, 'KILL_EXISTING_TABLES', False)
 
@@ -1931,15 +1894,20 @@ def dido_create(config_dict: dict):
     sql_filename = os.path.join(work_dir, 'sql', 'create-tables.sql')
     doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
 
-    # write initial code to sqlfile, successie write_sql open the file in append mode
+    # write initial code to sqlfile, write_sql opens file in append mode
     with open(sql_filename, encoding="utf8", mode='w') as sqlfile:
         # create a transaction of tables creation
-        sqlfile.write('-- Quit immediately with exit code other than 0 when an error occurs\n')
+        sqlfile.write('-- Quit immediately with exit code other '
+                      'than 0 when an error occurs\n')
         sqlfile.write('\\set ON_ERROR_STOP true\n\n')
         sqlfile.write('BEGIN; -- Transaction\n\n')
 
     # select which suppliers to process
-    suppliers_to_process = suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
+    suppliers_to_process = suppliers_to_process = dc.get_par(
+        config = config_dict,
+        key = 'SUPPLIERS_TO_PROCESS',
+        default = '*',
+    )
 
     # just * means process all
     if suppliers_to_process == '*':
@@ -1953,18 +1921,17 @@ def dido_create(config_dict: dict):
     with open(doc_filename, encoding="utf8", mode='w') as docfile:
         docfile.write('[[_TOC_]]\n\n')
 
-    # copy table_desc as a template for information each leverancier has to deliver
+    # copy table_desc as template for information each supplier has to deliver
     for leverancier_id in suppliers_to_process:
         dc.subheader(f'Supplier: {leverancier_id}', '=')
         logger.info('')
 
-        # count the number of deliveries and fetch sup[plier and delivery accordingly
+        # count number of deliveries and fetch supplier and delivery accordingly
         delivery_seq = 1
         logger.info(f'Dido_create always applies delivery {delivery_seq}')
         leverancier_config, projects = dc.get_supplier_projects(
             config = config_dict,
             supplier = leverancier_id,
-            project_name = project_name,
             delivery = 1,
             keyword = 'SUPPLIERS',
         )
@@ -1979,38 +1946,38 @@ def dido_create(config_dict: dict):
             # copy table info into leverancier_config
             leverancier_config[dc.TAG_TABLES] = {}
             for table_key in table_desc.keys():
-                # COPY the table dictionary to the supplier dict,
-                # else a shared rprinteference will be copied; use copy() function
-                leverancier_config[dc.TAG_TABLES][table_key] = table_desc[table_key].copy()
+
+                # COPY the table dictionary to the supplier dict, else shared
+                # printreference will be copied; use copy() function
+                leverancier_config[dc.TAG_TABLES][table_key] = \
+                    table_desc[table_key].copy()
 
                 # copy all keys, as they are string, the are correctly copied
                 for key in table_desc[table_key].keys():
-                    leverancier_config[dc.TAG_TABLES][table_key][key] = table_desc[table_key][key]
+                    leverancier_config[dc.TAG_TABLES][table_key][key] = \
+                        table_desc[table_key][key]
                 # for
             # for
 
             # load schema and documentation files and add to leveranciers info
-            # leveranciers = load_supplier_schemas(leveranciers, root_dir, work_dir)
             leverancier_config = load_supplier_schemas(
                 supplier_config = leverancier_config,
                 supplier_id = leverancier_id,
                 projects = projects,
                 project_id = project_key,
                 root = root_dir,
-                work = work_dir
+                work = work_dir,
             )
-            print(leverancier_config['tables']['meta']['schema'])
+
             # add ODL info from database
             leverancier_config = load_supplier_odl(
                 supplier_config = leverancier_config,
                 project_name = project,
-                server_config = odl_server_config
+                server_config = odl_server_config,
             )
 
-            print(leverancier_config['tables']['meta']['schema'])
-            # check if the tables exist in the database and warn the user if such is the case
-            # print(leverancier_config['tables']['meta']['data'])
-            presence, any_present = test_for_existing_tables(
+            # warn if the tables exist in the database
+            _, any_present = test_for_existing_tables(
                 supplier_id = leverancier_id,
                 project_name = project_key,
                 supplier_config = leverancier_config,
@@ -2018,33 +1985,32 @@ def dido_create(config_dict: dict):
             )
 
             if any_present:
-                logger.warning('!!! Tables already exist, please destroy these using "dido_kill_supplier"')
-                dido_list()
+                logger.warning('!!! Tables already exist, please destroy '
+                               'these using "dido_kill_supplier"')
+                # dido_list()
 
             # create SQL to create tables
             meta_table = dc.load_odl_table(
                 table_name = 'bronbestand_attribuut_meta_description',
                 server_config = odl_server_config,
             )
-            leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_TABLE_META] = meta_table
-            # print(leverancier_config['tables']['meta']['data'])
+            leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_TABLE_META] = \
+                meta_table
 
-            dir_load = os.path.join(work_dir, 'schemas', leverancier_id)
-            source_file = project['schema_file']
-            fname_schema_load = os.path.join(dir_load, source_file + '.schema.csv')
-            schema = pd.read_csv(
-                fname_schema_load,
-                sep = ';',
-                dtype = str,
-                keep_default_na = False,
-                na_values = []
-            ).fillna('')
-            # leverancier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
-            schema = leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_TABLE_SCHEMA] = schema
+            # dir_load = os.path.join(work_dir, 'schemas', leverancier_id)
+            # source_file = project['schema_file'] + '.schema.csv'
+            # fname_schema_load = os.path.join(dir_load, source_file)
+            # schema = pd.read_csv(
+            #     fname_schema_load,
+            #     sep = ';',
+            #     dtype = str,
+            #     keep_default_na = False,
+            #     na_values = []
+            # ).fillna('')
+            # schema = leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_TABLE_SCHEMA] = schema
 
             write_sql(
-                schema = schema,#schema_template,
-                meta_data = meta_table,#meta_leverancier,
+                meta_data = meta_table,
                 supplier_config = leverancier_config,
                 supplier_id = leverancier_id,
                 project_config = project,
@@ -2068,7 +2034,12 @@ def dido_create(config_dict: dict):
     with open(sql_filename, encoding="utf8", mode='a') as sqlfile:
         sqlfile.write('\nCOMMIT; -- Transaction\n')
 
-    dc.report_psql_use('create-tables', db_servers, any_present, overwrite_tables)
+    dc.report_psql_use(
+        table = 'create-tables',
+        servers = db_servers,
+        tables_exist = any_present,
+        overwrite = overwrite_tables,
+    )
 
     return
 

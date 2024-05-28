@@ -310,7 +310,8 @@ def load_data(supplier_config: dict,
 
     else:
         logger.info('Reading with headers')
-        data = pd.read_csv(filename,
+        data = pd.read_csv(
+            filename,
             sep = delimiter,
             dtype = str,
             keep_default_na = False,
@@ -1058,7 +1059,10 @@ def dido_data_prep(header: str):
     config_dict = dc.read_config(args.project)
     dc.display_dido_header(header, config_dict)
 
-    delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], args.delivery)
+    delivery_config = dc.read_delivery_config(
+        project_path = config_dict['ROOT_DIR'],
+        delivery_filename = args.delivery,
+    )
 
     # get project environment
     project_name = config_dict['PROJECT_NAME']
@@ -1095,7 +1099,7 @@ def dido_data_prep(header: str):
             delivery = leverancier_id,
             keyword = 'DELIVERIES',
         )
-        print(projects)
+
         for project_key in projects.keys():
             dc.subheader(f'Project: {project_key}', '-')
             project = projects[project_key]
@@ -1106,7 +1110,7 @@ def dido_data_prep(header: str):
 
             # process all deliveries
             for cargo_name in cargo_dict.keys():
-                dc.subheader(f'--- Delivery {cargo_name} ---', '.')
+                dc.subheader(f'Delivery: {cargo_name}', '.')
 
                 # get cargo associated with the cargo_name
                 cargo = cargo_dict[cargo_name]

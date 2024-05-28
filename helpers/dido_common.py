@@ -605,8 +605,7 @@ def read_config(project_dir: str) -> dict:
 
     sql = load_sql()
 
-    item_names = ['ROOT_DIR', 'WORK_DIR', 'PROJECT_NAME', 'HOST',
-                  'SERVER_CONFIGS']
+    item_names = ['ROOT_DIR', 'WORK_DIR', 'HOST', 'SERVER_CONFIGS']
     errors = False
     for item in item_names:
         if item not in config.keys():
@@ -920,7 +919,6 @@ def get_table_names(project_name: str, supplier: str, postfix: str = 'data') -> 
 
 def get_supplier_projects(config: dict,
                           supplier: str,
-                          project_name: str,
                           delivery,
                           keyword: str,
                          ):
@@ -937,44 +935,20 @@ def get_supplier_projects(config: dict,
     Returns:
         dict: dictionary of supplier addjusted with correct delivery
     """
-    errors = False
-    # project_name = config['PROJECT_NAME']
     suppliers = config[keyword]
     leverancier = suppliers[supplier].copy()
 
     # test if supplier contains projects
-    projects = {}
-    n_projects = sum([1 if 'project_' in key else 0 for key in leverancier.keys()])
+    project_keys = leverancier.keys()
 
     # old style projects: no projects means al is one project (project_name)
-    if n_projects == 0:
-        projects[project_name] = leverancier.copy()
+    if len(project_keys) == 0:
+        raise DiDoError(f'*** No projects define for supplier {supplier}')
 
     # project found, only statements just below supplier are projects
-    elif n_projects == len(leverancier.keys()):
-        for proj in leverancier.keys():
-            part_1, part_2 = proj.split('_', 1)
-
-            if len(part_2) == 0:
-                errors = True
-                logger.critical(f'Empty project part for project {proj}')
-            else:
-                projects[part_2] = leverancier[proj].copy()
-            # if
-        # for
-
-    # confusing situation: not allowed. Either all statements are a projects
-    # (just below the supplier) or there is no project statement at all
-    else:
-        errors = True
-
-    # if
-
-    if errors:
-        logger.critical('*** Config.yaml either contains no project or only projects')
-        raise DiDoError('*** Correct this error and try again')
-
-    # if
+    projects = {}
+    for proj in project_keys:
+        projects[proj] = leverancier[proj].copy()
 
     leverancier['config'] = config
     leverancier['supplier_id'] = supplier
@@ -1012,10 +986,7 @@ def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
 
 
 def get_cargo(cargo_config: dict, supplier: str, project_key: str):
-    if project_key is None or len(project_key) == 0:
-        cargo = cargo_config['DELIVERIES'][supplier]
-    else:
-        cargo = cargo_config['DELIVERIES'][supplier]['project_' + project_key]
+    cargo = cargo_config['DELIVERIES'][supplier][project_key]
 
     return cargo
 
