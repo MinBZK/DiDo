@@ -435,6 +435,10 @@ def read_cli():
 
     args = argParser.parse_args()
 
+    if args.project is None:
+        print('\n*** No -p <project-dir> specified at program call\n')
+        sys.exit(1)
+
     return  app_path, args
 
 ### read_cli ###
@@ -975,7 +979,7 @@ def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
     splits = cargo_name.split('_')
     if len(splits) == 2:
         if splits[0] != 'delivery':
-            raise_DiDoError(f'*** Delivery should start with "delivery_", error for "{cargo_name}"')
+            raise DiDoError(f'*** Delivery should start with "delivery_", error for "{cargo_name}"')
 
     cargo_dict[ODL_LEVERING_FREK] = splits[1]
     cargo_dict['supplier_id'] = supplier_name

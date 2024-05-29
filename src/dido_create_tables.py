@@ -12,6 +12,7 @@ anders moeten de schemafiles in de root directory worden aangepast. Wat in de
 work directrory staat wordt altijd overschreven door dido_begin.
 """
 import os
+import sys
 import time
 import pandas as pd
 
@@ -34,12 +35,11 @@ from dido_common import DiDoError
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
-#######################################################################################################################
+###############################################################################
 #
 # Fase 1 - Read and check the schema files
 #
-#######################################################################################################################
-
+###############################################################################
 
 def fetch_schema_from_table(table_name: str, sql_server_config: dict) -> pd.DataFrame:
     """ fetch a schema from the database

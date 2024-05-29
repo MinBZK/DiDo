@@ -1065,7 +1065,7 @@ def dido_data_prep(header: str):
     )
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
+    # project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
@@ -1095,7 +1095,7 @@ def dido_data_prep(header: str):
         leverancier, projects = dc.get_supplier_projects(
             config = delivery_config,
             supplier = leverancier_id,
-            project_name = project_name,
+            # project_name = project_name,
             delivery = leverancier_id,
             keyword = 'DELIVERIES',
         )
