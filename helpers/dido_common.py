@@ -695,6 +695,23 @@ def read_config(project_dir: str) -> dict:
 ### read_config ###
 
 
+def get_config_file(config_path: str, config_name: str):
+    """ Read a .yaml file from the config directory
+
+    Args:
+        config_path (str): path to the config directory
+        config_name (str): name of the config file
+    """
+    configfile = os.path.join(config_path, config_name)
+
+    with open(configfile, encoding = 'utf8', mode = "r") as infile:
+        config = yaml.safe_load(infile)
+
+    return config
+
+### get_config_file ###
+
+
 def read_delivery_config(project_path: str, delivery_filename: str):
 
     delivery_filename = os.path.join(project_path, 'data', delivery_filename)

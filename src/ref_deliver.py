@@ -40,133 +40,7 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
 
-def create_config_file(projects: list, schema_dir: str):
-    snippet_dir = os.path.join(schema_dir, 'auto_generate', 'snippets')
-    config_snippet_file = os.path.join(snippet_dir,
-                                      'template_config_snippet.yaml')
-
-    with open(config_snippet_file, 'r') as infile:
-        snippet = infile.read()
-
-    configs = ''
-
-    for project in projects:
-        project_cfg = snippet.format(**project)
-        configs += project_cfg + '\n'
-
-    with open(os.path.join(schema_dir, 'configs.yaml'), 'w') as outfile:
-        outfile.write(configs)
-
-    return
-
-### create_config_file ###
-
-
-def create_meta_files(projects: pd.DataFrame, schema_dir: str):
-    snippet_dir = os.path.join(schema_dir, 'auto_generate', 'snippets')
-    config_snippet_file = os.path.join(snippet_dir,
-                                      'meta_file_snippet.csv')
-
-    with open(config_snippet_file, 'r') as infile:
-        snippet = infile.read()
-
-    for project in projects:
-        project_meta = snippet.format(**project)
-        _, fn, ext = dc.split_filename(project['filename'])
-        fn = fn.replace('_S_', '_')
-        meta_filename = os.path.join(schema_dir, fn + '.meta.csv')
-
-        with open(os.path.join(schema_dir, meta_filename), 'w') as outfile:
-            outfile.write(project_meta)
-
-    return
-
-### create_meta_files ###
-
-
-def test():
-    pattern = re.compile(regex)
-
-    if pattern.match('20231117_S_ZBIOEMPST_Mdwrkrssubgrp_t.CSV'):
-        print('yes')
-    else:
-        print('no')
-
-    files = s3_helper.s3_command_ls_return_fullpath(
-        folder = 's3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie' \
-                 '/referentiedata/MBP/raw/data_dicts/',
-    )
-
-    result = []
-    for file in files:
-        _, fn, ext = dc.split_filename(file)
-        if pattern.match(fn):
-            result.append(fn)
-            print(fn)
-
-    print(len(files), 'files,', len(result), 'results')
-
-    sys.exit()
-
-    return
-
-
-def create_code_bronbestand(schema_dir: str,
-                            ref_config: dict,
-                            supplier_name: str,
-                            # data_dict_path: str,
-                            # frequency: str,
-                            # decimal: str,
-                           ):
-
-    # fetch relevant info from the ref_config secxtion
-    data_path = dc.get_par(ref_config, 'data_path', None).strip()
-    deliv_periods = dc.get_par(ref_config, 'levering_rapportageperiode', [])
-    regex = dc.get_par(ref_config, 'file_pattern', None).strip()
-    pattern = re.compile(regex)
-
-    # get the header files from s3
-    files = s3_helper.s3_command_ls_return_fullpath(
-        folder = data_path,
-    )
-
-    # select those that conform to header_pattern
-    result = []
-    logger.info('Selecting files that conform to header pattern')
-    for file in files:
-        _, fn, ext = dc.split_filename(file)
-        if pattern.match(fn):
-            result.append(fn)
-            logger.debug(fn)
-
-    logger.info(f'{len(file)} found, len(result) files conform to pattern')
-    logger.info('')
-
-    codename_list = []
-    for filename in files:
-        _, fn, ext = dc.split_filename(filename)
-        splits = fn.split('_', 3)
-        schema_name = fn.replace('_S_', '_')
-        pname = splits[3].translate({ord(c): None for c in '_'}).strip()
-        data_dict_file = os.path.join(data_path, fn + ext)
-        project = {'code': splits[2],
-                   'supplier_name': supplier_name.strip(),
-                   'project_name': pname.lower(),
-                   'data_dict_file': data_dict_file,
-                   'frequency': freq,
-                   'decimal': decimal,
-                   'n_records': 1,
-                   'schema_filename': schema_name,
-                   'filename': fn + ext,
-                  }
-        codename_list.append(project)
-
-    return codename_list
-
-### create_code_bronbestand ###
-
-
-def get_tables(supplier_id: str, schema: str, servers: dict):
+def get_table_names(supplier_id: str, servers: dict):
     """ Get a dataframe of all tables of a schema
 
     Args:
@@ -177,13 +51,128 @@ def get_tables(supplier_id: str, schema: str, servers: dict):
     Returns:
         A dataframe with information on all tables in schema
     """
+    data_server = servers['DATA_SERVER_CONFIG']
+    query = "SELECT * FROM information_schema.tables WHERE " \
+           f"table_schema = '{data_server['POSTGRES_SCHEMA']}';"
+    result = st.query_to_dataframe(query, sql_server_config = data_server)
 
-    query = f"SELECT * FROM information_schema.tables WHERE table_schema = '{schema}';"
-    tables = st.query_to_dataframe(query, servers['DATA_SERVER_CONFIG'])
+    result = result[result['table_name'].str.contains('schema_data')]
+    tables = result['table_name'].tolist()
 
     return tables
 
-### get_tables ###
+### get_table_names ###
+
+
+def find_project_name(string_list: list, n_splits: int, project_name: str):
+    for string in string_list:
+        _, text, _ = dc.split_filename(string)
+        splits = text.split('_', n_splits)
+        project_part = splits[-1].replace('_', '').strip().lower()
+        if project_part == project_name:
+            return string
+
+    # for
+
+    return ''
+
+### find_project_name ###
+
+
+def collect_project_info(config: dict,
+                         periode: str,
+                         table_list: list,
+                         pad: str,
+                        ):
+    regex = config['FILE_PATTERN']
+    file_pattern = re.compile(regex)
+    regex = config['HEADER_PATTERN']
+    header_pattern = re.compile(regex)
+
+    logger.info(f'Fetching files from {pad}')
+    files = s3_helper.s3_command_ls_return_fullpath(folder = pad + '/')
+
+    logger.info(f'Redirecting {len(files)} files')
+    data_files = []
+    header_files = []
+    for file in files:
+        _, fn, ext = dc.split_filename(file)
+        if file_pattern.match(fn):
+            data_files.append(fn + ext)
+        elif header_pattern.match(fn):
+            header_files.append(fn + ext)
+
+    logger.info(f'{len(data_files)} data files and {len(header_files)} '
+                f'header files of a total of {len(files)} files.')
+
+    projects = []
+    # table list contains expected data files, find associated filenames
+    for table_name in table_list:
+        splits = table_name.split('_')
+        project_name = splits[1].strip().lower()
+        project = {}
+        project['table_name'] = table_name
+        project['project_name'] = project_name
+
+        filename = find_project_name(data_files, 2, project_name)
+        headername = find_project_name(header_files, 3, project_name)
+
+        if len(filename) < 0:
+            logger.warning(f'!!! Project without file name: {project_name}')
+        elif len(headername) < 0:
+            logger.warning(f'!!! Project without header file: {project_name}')
+        else:
+            logger.info(filename)
+            splits = filename.split('_', 2)
+            leveringsdatum = splits[0].strip()
+            code_bronbestand = splits[1].upper().strip()
+            project['data_name'] = os.path.join(pad, filename)
+            project['header_name'] = os.path.join(pad, headername)
+            project['levering_rapportageperiode'] = periode
+            project['code_bronbestand'] = code_bronbestand
+            project['leveringsdatum'] = leveringsdatum
+
+            data_files.remove(filename)
+            header_files.remove(headername)
+
+            projects.append(project)
+        # if
+
+    # for
+
+    if len(data_files) > 0:
+        logger.warning(f'!!! Data files not in tables: {data_files}')
+    if len(header_files) > 0:
+        logger.warning(f'!!! Header files not in tables: {header_files}')
+
+    return projects
+
+### collect_project_info ###
+
+
+def create_deliveries(projects: list,
+                      supplier_id: str,
+                      template: str,
+                      delivery_template: str,
+                      filename: str,
+                     ):
+    deliveries = ''
+    for project in projects:
+        filled = template.format(**project)
+        deliveries += filled
+
+    variables = {'deliveries': deliveries,
+                 'supplier_name': supplier_id
+                }
+
+    delivery_output = delivery_template.format(**variables)
+
+    with open(filename, 'w') as outfile:
+        outfile.write(delivery_output)
+
+    return
+
+### create_deliveries ###
 
 
 def ref_deliver(config_dict: dict):
@@ -201,40 +190,47 @@ def ref_deliver(config_dict: dict):
         suppliers_to_process = leveranciers.keys()
 
     # read auto config file
-    configfile = os.path.join(config_dict['PROJECT_DIRECTORY'],
-        'config', 'auto_config.yaml')
-
-    with open(configfile, encoding = 'utf8', mode = "r") as infile:
-        auto_config = yaml.safe_load(infile)
-
-    # read auto config file
-    configfile = os.path.join(config_dict['PROJECT_DIRECTORY'],
-        'config', 'auto_delivery.yaml')
-
-    with open(configfile, encoding = 'utf8', mode = "r") as infile:
-        auto_deliver = yaml.safe_load(infile)
-
-    df = get_tables('pdirekt', 'ref', db_servers)
-    print(df)
+    config_dir = os.path.join(config_dict['PROJECT_DIRECTORY'], 'config')
+    auto_config = dc.get_config_file(config_dir, 'auto_config.yaml')
+    auto_delivery = dc.get_config_file(config_dir, 'auto_delivery.yaml')
+    filename = os.path.join(config_dir, 'auto-generate', 'template_delivery.yaml')
+    with open(filename, 'r') as infile:
+         template = infile.read()
 
     # process each supplier
-    for leverancier_id in auto_generate:
+    suppliers = dc.get_par(auto_delivery, 'SUPPLIERS', [])
+    if len(suppliers) < 1:
+        logger.error('No "suppliers" provided in auto_delivery.yaml')
+
+    delivery_template_filename = \
+        os.path.join(config_dir, 'auto-generate', 'delivery.yaml')
+    with open(delivery_template_filename, 'r') as infile:
+        delivery_template = infile.read()
+
+    projects = []
+    for leverancier_id in suppliers:
         dc.subheader(f'Supplier {leverancier_id}', '=')
+        periodes = auto_delivery['LEVERING_RAPPORTAGEPERIODE']
 
-        schema_dir = os.path.join(root_dir, 'schemas', leverancier_id)
-        # header_dir = os.path.join(schema_dir, 'auto_generate', 'data_dicts')
-        # if not os.path.exists(header_dir):
-        #     raise DiDoError(f'Directory {header_dir} does not exist')
+        for periode in periodes:
+            dc.subheader(f'Period {periode}', '.')
+            pad = os.path.join(auto_delivery['DATA_PATH'], periode)
+            table_list = get_table_names(leverancier_id, db_servers)
 
-        df = create_code_bronbestand(
-            schema_dir = schema_dir,
-            ref_config = auto_delivery_config,
-            supplier_name = leverancier_id,
+            projs = collect_project_info(auto_delivery, periode, table_list, pad)
+            projects.extend(projs)
+
+        # for
+
+        logger.info(f'A total of {len(projects)} files will be delivered')
+        filename = os.path.join(root_dir, 'data', config_dict['DELIVERY_FILE'])
+        create_deliveries(
+            projects = projects,
+            supplier_id = leverancier_id,
+            template = template,
+            delivery_template = delivery_template,
+            filename = filename,
         )
-
-        print(len(df), 'projects will be processed for config')
-        create_config_file(df, schema_dir)
-        create_meta_files(df, schema_dir)
 
     # for
 
@@ -251,9 +247,10 @@ def main():
 
     # read the configuration file
     config = dc.read_config(args.project)
+    config['DELIVERY_FILE'] = args.delivery
 
     # display banner
-    dc.display_dido_header('Creating Tables and Documentation', config)
+    dc.display_dido_header('Auto Delivery Generator', config)
 
     # create the tables
     ref_deliver(config)
