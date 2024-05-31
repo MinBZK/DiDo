@@ -42,7 +42,7 @@ def s3_clean_msg(clean_me:str, split_on:str='s3://', starts_with:str='s3_dg', \
     return clean_me
 
 
-def s3_command_ls_return_fullpath(folder:str='', bucket:str='prd') -> list:
+def s3_command_ls_return_fullpath(folder:str='', bucket:str='') -> list:
     """
         listing without details on files or folders
         raises error if S3 credentials are incomplete
@@ -55,14 +55,19 @@ def s3_command_ls_return_fullpath(folder:str='', bucket:str='prd') -> list:
         list of all items found in the specific folder
     """
     # errcheck
-    if folder != '':
-        if not folder.startswith('/'):
-            folder = '/' + folder
-        if not folder.endswith('/'):
-            folder += '/'
+    # if folder != '':
+        # if not folder.startswith('/'):
+        #     folder = '/' + folder
+        # if not folder.endswith('/'):
+        #     folder += '/'
 
+    print(folder)
     # run process
-    cmd = ['s3cmd', 'ls', f's3://s3_dgdoobi_dwh_{bucket}{folder}']
+    if len(bucket) < 1:
+        cmd = ['s3cmd', 'ls', folder]
+    else:
+        cmd = ['s3cmd', 'ls', f's3://s3_dgdoobi_dwh_{bucket}{folder}']
+
     executed = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
 
     # check for runtime errors

@@ -607,6 +607,8 @@ def read_config(project_dir: str) -> dict:
     with open(configfile, encoding = 'utf8', mode = "r") as infile:
         config = yaml.safe_load(infile)
 
+    config['PROJECT_DIRECTORY'] = project_dir
+
     sql = load_sql()
 
     item_names = ['ROOT_DIR', 'WORK_DIR', 'HOST', 'SERVER_CONFIGS']

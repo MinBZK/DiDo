@@ -218,7 +218,7 @@ def load_pdirekt_header_file(supplier_config: dict,
         s3_helper.s3_command_get_file(
             download_to = filename,
             filepath_s3 = server_path,
-            force_overwrite = True
+            force_overwrite = True,
         )
 
     # load the header into a dataframe

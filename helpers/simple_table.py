@@ -138,10 +138,11 @@ def query_to_dataframe(query: str,
                               )
 
     try:
-        result = pd.read_sql(query,
+        result = pd.read_sql(
+            query,
             con = engine,
             coerce_float = True,
-            )
+        )
 
     except:
         result = None

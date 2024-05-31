@@ -14,6 +14,7 @@ work directrory staat wordt altijd overschreven door dido_begin.
 import os
 import sys
 import time
+import shutil
 import pandas as pd
 
 from datetime import datetime
@@ -23,9 +24,10 @@ from datetime import datetime
 # import api_postcode
 import dido_common as dc
 import simple_table as st
+import s3_helper
 
 from dido_common import DiDoError
-# from dido_list import dido_list
+from dido_list import dido_list
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
@@ -438,7 +440,75 @@ def create_workdir_structure(config_vars: dict, server_config):
 ### create_workdir_structure ###
 
 
-def create_schema_from_pdirekt_datadict(filename: str, data_dict: dict):
+def get_pdirekt_header_file(header_file: str, root_directory: str, supplier_id: str):
+    """ Looks for datafiles in the root/data directory
+
+    Args:
+        root_directory (str): name of the root directory
+        suppliers (_type_): list of suppliers
+
+    Returns:
+        dict: dictionary for each supplier with data files
+    """
+
+    # check if first character in data_file is a /
+    if header_file.startswith('/'):
+        # absolute path
+        pad, fn, ext = dc.split_filename(data_file)
+        filename = os.path.join(root_directory, fn + ext)
+        shutil.copy2(header_file, filename)
+
+
+    # check id data reside on s3 bucket
+    elif header_file.startswith('s3://'):
+        server = 's3'
+        pad, fn, ext = dc.split_filename(header_file)
+        # server_path = header_file
+        fn = fn + ext
+        filename = os.path.join(root_directory, 'data', supplier_id, fn)
+
+        s3_helper.s3_command_get_file(
+            download_to = filename,
+            filepath_s3 = header_file, # server_path,
+            force_overwrite = True,
+        )
+
+    else:
+        # path relative to root_directory/data
+        pad = os.path.join(root_directory, 'data', supplier_id)
+        filename = data_file
+
+    # if
+
+    # load the header into a dataframe
+    # headers = pd.read_csv(
+    #     filename,
+    #     sep = ';',
+    #     dtype = str,
+    #     keep_default_na = False,
+    #     skiprows = 5,
+    #     engine = 'c',
+    #     encoding = 'utf8',
+    # )
+
+    return filename
+
+### get_pdirekt_header_file ###
+
+
+def create_schema_from_pdirekt_datadict(filename: str,
+                                        root_directory: str,
+                                        supplier_id: str,
+                                        data_dict: dict,
+                                       ):
+
+    # Process the header file
+    filename = get_pdirekt_header_file(
+        header_file = filename,
+        root_directory = root_directory,
+        supplier_id = supplier_id,
+    )
+
     # Read data dictionary into DataFrame
     dd = pd.read_csv(
         filename, # tables[supplier_id]['schema_name'],
@@ -545,7 +615,9 @@ def preprocess_data_dict(
         data_dict_specs: str,
         schema_filename: str,
         schema_dir: str,
+        root_directory: str,
         leverancier: pd.DataFrame,
+        leverancier_id: str,
     ):
     schema_source = dc.get_par(data_dict_specs, 'schema_source', '')
     merge_file = dc.get_par(data_dict_specs, 'merge_with', '')
@@ -557,13 +629,18 @@ def preprocess_data_dict(
 
         # load data dictionary and create a valid schema from it
         # test if data_dict_file already has a .extension
-        _, _, ext = dc.split_filename(data_dict_file)
-        if len(ext) == 0:
-            data_dict = os.path.join(schema_dir, data_dict_file + '.csv')
-        else:
-            data_dict = os.path.join(schema_dir, data_dict_file)
+        # _, _, ext = dc.split_filename(data_dict_file)
+        # if len(ext) == 0:
+        #     data_dict = os.path.join(schema_dir, data_dict_file + '.csv')
+        # else:
+        #     data_dict = os.path.join(schema_dir, data_dict_file)
 
-        temp_df = create_schema_from_pdirekt_datadict(data_dict, data_dict_specs)
+        temp_df = create_schema_from_pdirekt_datadict(
+            filename = data_dict_file,
+            root_directory = root_directory,
+            supplier_id = leverancier_id,
+            data_dict = data_dict_specs,
+        )
 
         # if additional info available, merge it with the schema
         if len(merge_file):
@@ -1730,14 +1807,6 @@ def dido_begin(config_dict: dict):
 
             source_file = project['schema_file']
             fname_schema_load = os.path.join(dir_load, source_file + '.schema.csv')
-            data_dict = dc.get_par(project, 'data_dictionary', {})
-            if len(data_dict) > 0:
-                preprocess_data_dict(data_dict, fname_schema_load, dir_load, project)
-
-            # if use_of_batches
-
-            # files
-            fname_schema_load = os.path.join(dir_load, source_file + '.schema.csv')
             fname_meta_load = os.path.join(dir_load, source_file + '.meta.csv')
             fname_data_load = os.path.join(dir_load, source_file + '.data.csv')
             fname_schema_save = fname_schema_load.replace(dir_load, dir_save)
@@ -1754,9 +1823,16 @@ def dido_begin(config_dict: dict):
             For p-direct the function create_schema_from_pdirekt_datadict is provided.
             The function preprocess_data_dict prepocesses a data dictionary when present.
             """
-            # data_dict = dc.get_par(leverancier, 'data_dictionary', {})
+            data_dict = dc.get_par(project, 'data_dictionary', {})
             if len(data_dict) > 0:
-                preprocess_data_dict(data_dict, fname_schema_load, dir_load, leverancier)
+                preprocess_data_dict(
+                    data_dict_specs = data_dict,
+                    schema_filename = fname_schema_load,
+                    schema_dir = dir_load,
+                    root_directory = root_dir,
+                    leverancier = leverancier,
+                    leverancier_id = leverancier_id,
+                )
 
             # load templates from database
             schema_template = dc.load_odl_table(dc.SCHEMA_TEMPLATE, odl_server_config)
@@ -1987,7 +2063,7 @@ def dido_create(config_dict: dict):
             if any_present:
                 logger.warning('!!! Tables already exist, please destroy '
                                'these using "dido_kill_supplier"')
-                # dido_list()
+                dido_list()
 
             # create SQL to create tables
             meta_table = dc.load_odl_table(
