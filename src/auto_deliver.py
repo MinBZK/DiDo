@@ -64,11 +64,16 @@ def get_table_names(supplier_id: str, servers: dict):
 ### get_table_names ###
 
 
-def find_project_name(string_list: list, n_splits: int, project_name: str):
-    for string in string_list:
+def find_project_name(string_dict: list,
+                      n_splits: int,
+                      project_name: str,
+                      periode: str,
+                     ):
+
+    for string in string_dict[periode]:
         _, text, _ = dc.split_filename(string)
         splits = text.split('_', n_splits)
-        project_part = splits[-1].replace('_', '').strip().lower()
+        project_part = splits[n_splits - 1].replace('_', '').strip().lower()
         if project_part == project_name:
             return string
 
@@ -79,87 +84,129 @@ def find_project_name(string_list: list, n_splits: int, project_name: str):
 ### find_project_name ###
 
 
+def collect_files_and_headers(config: dict,
+                              periodes: list,
+                              table_list: list,
+                              pad: str,
+                             ):
+    file_dict = {}
+    header_dict = {}
+    for periode in periodes:
+        regex = config['FILE_PATTERN']
+        file_pattern = re.compile(regex)
+        regex = config['HEADER_PATTERN']
+        header_pattern = re.compile(regex)
+
+        path = os.path.join(pad, periode) + '/'
+        logger.info(f'Fetching files from {path}')
+        files = s3_helper.s3_command_ls_return_fullpath(folder = path)
+
+        logger.info(f'Redirecting {len(files)} files')
+        data_files = []
+        header_files = []
+        for file in files:
+            _, fn, ext = dc.split_filename(file)
+            if file_pattern.match(fn):
+                data_files.append(fn + ext)
+            elif header_pattern.match(fn):
+                header_files.append(fn + ext)
+            # if
+        # for
+
+        file_dict[periode] = data_files
+        header_dict[periode] = header_files
+
+        logger.info(f'{periode}: {len(data_files)} data files and '
+                    f'{len(header_files)} header files of a total '
+                    f'of {len(files)} files.')
+
+    # for
+
+    return file_dict, header_dict
+
+### collect_files_and_headers ###
+
+
 def collect_project_info(config: dict,
-                         periode: str,
+                         periodes: list,
                          table_list: list,
                          pad: str,
                         ):
-    regex = config['FILE_PATTERN']
-    file_pattern = re.compile(regex)
-    regex = config['HEADER_PATTERN']
-    header_pattern = re.compile(regex)
 
-    logger.info(f'Fetching files from {pad}')
-    files = s3_helper.s3_command_ls_return_fullpath(folder = pad + '/')
+    data_dict, header_dict = collect_files_and_headers(
+        config = config,
+        periodes = periodes,
+        table_list = table_list,
+        pad = pad,
+    )
 
-    logger.info(f'Redirecting {len(files)} files')
-    data_files = []
-    header_files = []
-    for file in files:
-        _, fn, ext = dc.split_filename(file)
-        if file_pattern.match(fn):
-            data_files.append(fn + ext)
-        elif header_pattern.match(fn):
-            header_files.append(fn + ext)
-
-    logger.info(f'{len(data_files)} data files and {len(header_files)} '
-                f'header files of a total of {len(files)} files.')
-
-    projects = []
+    projects = {}
     # table list contains expected data files, find associated filenames
     for table_name in table_list:
         splits = table_name.split('_')
         project_name = splits[1].strip().lower()
-        project = {}
-        project['table_name'] = table_name
-        project['project_name'] = project_name
+        delivery = {}
+        for periode in periodes:
+            project = {}
+            project['table_name'] = table_name
+            project['project_name'] = project_name
 
-        filename = find_project_name(data_files, 2, project_name)
-        headername = find_project_name(header_files, 3, project_name)
+            filename = find_project_name(data_dict, 2, project_name, periode)
+            headername = find_project_name(header_dict, 3, project_name, periode)
 
-        if len(filename) < 0:
-            logger.warning(f'!!! Project without file name: {project_name}')
-        elif len(headername) < 0:
-            logger.warning(f'!!! Project without header file: {project_name}')
-        else:
-            logger.info(filename)
-            splits = filename.split('_', 2)
-            leveringsdatum = splits[0].strip()
-            code_bronbestand = splits[1].upper().strip()
-            project['data_name'] = os.path.join(pad, filename)
-            project['header_name'] = os.path.join(pad, headername)
-            project['levering_rapportageperiode'] = periode
-            project['code_bronbestand'] = code_bronbestand
-            project['leveringsdatum'] = leveringsdatum
+            if len(filename) < 0:
+                logger.warning(f'!!! Project without file name: {project_name}')
+            elif len(headername) < 0:
+                logger.warning(f'!!! Project without header file: {project_name}')
+            else:
+                logger.info(filename)
+                splits = filename.split('_', 2)
+                leveringsdatum = splits[0].strip()
+                code_bronbestand = splits[1].upper().strip()
+                project['data_name'] = os.path.join(pad, periode, filename)
+                project['header_name'] = os.path.join(pad, periode, headername)
+                project['levering_rapportageperiode'] = periode
+                project['code_bronbestand'] = code_bronbestand
+                project['leveringsdatum'] = leveringsdatum
 
-            data_files.remove(filename)
-            header_files.remove(headername)
+                data_dict[periode].remove(filename)
+                header_dict[periode].remove(headername)
 
-            projects.append(project)
-        # if
+            # if
 
+            delivery[periode] = project
+
+        # for
+
+        projects[project_name] = delivery
     # for
 
-    if len(data_files) > 0:
-        logger.warning(f'!!! Data files not in tables: {data_files}')
-    if len(header_files) > 0:
-        logger.warning(f'!!! Header files not in tables: {header_files}')
+    for periode in periodes:
+        if len(data_dict[periode]) > 0:
+            logger.warning(f'!!! Data files not in tables: {data_dict[periode]}')
+        if len(header_dict[periode]) > 0:
+            logger.warning(f'!!! Header files not in tables: {header_dict[periode]}')
 
     return projects
 
 ### collect_project_info ###
 
 
-def create_deliveries(projects: list,
+def create_deliveries(projects: dict,
                       supplier_id: str,
+                      periodes: list,
                       template: str,
                       delivery_template: str,
                       filename: str,
                      ):
     deliveries = ''
-    for project in projects:
-        filled = template.format(**project)
-        deliveries += filled
+    for project_key in projects.keys():
+        deliveries += '    ' + project_key + ':\n'
+        project = projects[project_key]
+        for periode in periodes:
+            proj_periode = project[periode]
+            filled = template.format(**proj_periode)
+            deliveries += filled
 
     variables = {'deliveries': deliveries,
                  'supplier_name': supplier_id
@@ -189,44 +236,43 @@ def ref_deliver(config_dict: dict):
     if suppliers_to_process == '*':
         suppliers_to_process = leveranciers.keys()
 
-    # read auto config file
-    config_dir = os.path.join(config_dict['PROJECT_DIRECTORY'], 'config')
-    auto_config = dc.get_config_file(config_dir, 'auto_config.yaml')
-    auto_delivery = dc.get_config_file(config_dir, 'auto_delivery.yaml')
-    filename = os.path.join(config_dir, 'auto-generate', 'template_delivery.yaml')
-    with open(filename, 'r') as infile:
-         template = infile.read()
-
-    # process each supplier
-    suppliers = dc.get_par(auto_delivery, 'SUPPLIERS', [])
-    if len(suppliers) < 1:
-        logger.error('No "suppliers" provided in auto_delivery.yaml')
-
-    delivery_template_filename = \
-        os.path.join(config_dir, 'auto-generate', 'delivery.yaml')
-    with open(delivery_template_filename, 'r') as infile:
-        delivery_template = infile.read()
+    # just * means process all
+    suppliers_to_process = config_dict['SUPPLIERS_TO_PROCESS']
+    if suppliers_to_process == '*':
+        suppliers_to_process = leveranciers.keys()
 
     projects = []
-    for leverancier_id in suppliers:
+    for leverancier_id in suppliers_to_process:
         dc.subheader(f'Supplier {leverancier_id}', '=')
+
+        # read auto config file
+        config_dir = os.path.join(config_dict['PROJECT_DIRECTORY'],
+                                  'config', leverancier_id)
+
+        # auto_config = dc.get_config_file(config_dir, 'auto_config.yaml')
+        auto_delivery = dc.get_config_file(config_dir, 'auto_delivery.yaml')
         periodes = auto_delivery['LEVERING_RAPPORTAGEPERIODE']
 
-        for periode in periodes:
-            dc.subheader(f'Period {periode}', '.')
-            pad = os.path.join(auto_delivery['DATA_PATH'], periode)
-            table_list = get_table_names(leverancier_id, db_servers)
+        filename = os.path.join(config_dir, 'project_delivery.yaml')
+        with open(filename, 'r') as infile:
+            template = infile.read()
 
-            projs = collect_project_info(auto_delivery, periode, table_list, pad)
-            projects.extend(projs)
+        delivery_template_filename = \
+            os.path.join(config_dir, 'total_delivery.yaml')
+        with open(delivery_template_filename, 'r') as infile:
+            delivery_template = infile.read()
 
-        # for
+        pad = os.path.join(auto_delivery['DATA_PATH'])
+        table_list = get_table_names(leverancier_id, db_servers)
+
+        projects = collect_project_info(auto_delivery, periodes, table_list, pad)
 
         logger.info(f'A total of {len(projects)} files will be delivered')
         filename = os.path.join(root_dir, 'data', config_dict['DELIVERY_FILE'])
         create_deliveries(
             projects = projects,
             supplier_id = leverancier_id,
+            periodes = periodes,
             template = template,
             delivery_template = delivery_template,
             filename = filename,

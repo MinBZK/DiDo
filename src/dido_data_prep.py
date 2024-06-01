@@ -310,15 +310,18 @@ def load_data(supplier_config: dict,
 
     else:
         logger.info('Reading with headers')
-        data = pd.read_csv(
-            filename,
-            sep = delimiter,
-            dtype = str,
-            keep_default_na = False,
-            nrows = sample_size,
-            engine = 'c',
-            encoding = encoding,
-        )
+        try:
+            data = pd.read_csv(
+                filename,
+                sep = delimiter,
+                dtype = str,
+                keep_default_na = False,
+                nrows = sample_size,
+                engine = 'c',
+                encoding = encoding,
+            )
+        except pandas.errors.ParserError as err:
+            raise DiDoError(str(err))
 
     # if
 

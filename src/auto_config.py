@@ -40,30 +40,40 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
 
-def create_config_file(projects: list, schema_dir: str):
-    snippet_dir = os.path.join(schema_dir, 'auto_generate', 'snippets')
-    config_snippet_file = os.path.join(snippet_dir,
-                                      'template_config_snippet.yaml')
+def create_config_file(projects: list, config_dir: str, supplier_id):
+    auto_dir = os.path.join(config_dir, supplier_id)
+    config_snippet_file = os.path.join(auto_dir, 'project_config.yaml')
 
     with open(config_snippet_file, 'r') as infile:
         snippet = infile.read()
 
-    configs = ''
+    configs = f'  {supplier_id}:\n'
 
     for project in projects:
         project_cfg = snippet.format(**project)
         configs += project_cfg + '\n'
 
-    with open(os.path.join(schema_dir, 'configs.yaml'), 'w') as outfile:
-        outfile.write(configs)
+    total_config_file = os.path.join(auto_dir, 'total_config.yaml')
+    with open(total_config_file, 'r') as infile:
+        snippet = infile.read()
+
+    specifiers = {'suppliers': configs}
+    total = snippet.format(**specifiers)
+
+    with open(os.path.join(config_dir, 'config.yaml'), 'w') as outfile:
+        outfile.write(total)
 
     return
 
 ### create_config_file ###
 
 
-def create_meta_files(projects: pd.DataFrame, schema_dir: str):
-    snippet_dir = os.path.join(schema_dir, 'auto_generate', 'snippets')
+def create_meta_files(projects: pd.DataFrame,
+                      supplier_id: str,
+                      config_dir: str,
+                      schema_dir: str,
+                     ):
+    snippet_dir = os.path.join(config_dir, supplier_id)
     config_snippet_file = os.path.join(snippet_dir,
                                       'meta_file_snippet.csv')
 
@@ -76,39 +86,12 @@ def create_meta_files(projects: pd.DataFrame, schema_dir: str):
         fn = fn.replace('_S_', '_')
         meta_filename = os.path.join(schema_dir, fn + '.meta.csv')
 
-        with open(os.path.join(schema_dir, meta_filename), 'w') as outfile:
+        with open(os.path.join(config_dir, meta_filename), 'w') as outfile:
             outfile.write(project_meta)
 
     return
 
 ### create_meta_files ###
-
-
-def test():
-    pattern = re.compile(regex)
-
-    if pattern.match('20231117_S_ZBIOEMPST_Mdwrkrssubgrp_t.CSV'):
-        print('yes')
-    else:
-        print('no')
-
-    files = s3_helper.s3_command_ls_return_fullpath(
-        folder = 's3://s3_dgdoobi_dwh_sta_prd/personeel/jopi/ftpes_productie' \
-                 '/referentiedata/MBP/raw/data_dicts/',
-    )
-
-    result = []
-    for file in files:
-        _, fn, ext = dc.split_filename(file)
-        if pattern.match(fn):
-            result.append(fn)
-            print(fn)
-
-    print(len(files), 'files,', len(result), 'results')
-
-    sys.exit()
-
-    return
 
 
 def create_code_bronbestand(schema_dir: str,
@@ -120,10 +103,10 @@ def create_code_bronbestand(schema_dir: str,
                            ):
 
     # fetch relevant info from the ref_config secxtion
-    dd_path = dc.get_par(ref_config, 'data_dict_path', schema_dir).strip()
-    freq = dc.get_par(ref_config, 'frequency', 'Q').upper().strip()
-    decimal = dc.get_par(ref_config, 'decimal', '.').strip()
-    regex = dc.get_par(ref_config, 'header_pattern', None).strip()
+    dd_path = dc.get_par(ref_config, 'DATA_DICT_PATH', schema_dir).strip()
+    freq = dc.get_par(ref_config, 'FREQUENCY', 'Q').upper().strip()
+    decimal = dc.get_par(ref_config, 'DECIMAL', '.').strip()
+    regex = dc.get_par(ref_config, 'HEADER_PATTERN', None).strip()
     pattern = re.compile(regex)
 
     # get the header files from s3
@@ -137,14 +120,18 @@ def create_code_bronbestand(schema_dir: str,
     for file in files:
         _, fn, ext = dc.split_filename(file)
         if pattern.match(fn):
-            result.append(fn)
-            logger.debug(fn)
+            result.append(fn + ext)
+            logger.debug(fn + ext)
 
     logger.info(f'{len(files)} found, {len(result)} files conform to pattern')
     logger.info('')
 
     codename_list = []
-    for filename in files:
+    for filename in result:
+        # test if filename is directory (ends in '/'), if so, ignore
+        if filename[-1] == '/':
+            continue
+
         _, fn, ext = dc.split_filename(filename)
         splits = fn.split('_', 3)
         schema_name = fn.replace('_S_', '_')
@@ -152,7 +139,7 @@ def create_code_bronbestand(schema_dir: str,
         data_dict_file = os.path.join(dd_path, fn + ext)
         project = {'code': splits[2],
                    'supplier_name': supplier_name.strip(),
-                   'project_name': pname.lower(),
+                   'project_name': splits[2].lower().strip(), # pname.lower(),
                    'data_dict_file': data_dict_file,
                    'frequency': freq,
                    'decimal': decimal,
@@ -168,45 +155,32 @@ def create_code_bronbestand(schema_dir: str,
 
 
 def ref_config(config_dict: dict):
-    # get the database server definitions
-    db_servers = config_dict['SERVER_CONFIGS']
-    odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
+    # # get the database server definitions
+    # db_servers = config_dict['SERVER_CONFIGS']
 
     # get project environment
     root_dir = config_dict['ROOT_DIR']
-    work_dir = config_dict['WORK_DIR']
+    project_dir = config_dict['PROJECT_DIRECTORY']
+    config_dir = os.path.join(project_dir, 'config')
     leveranciers = config_dict['SUPPLIERS']
-
-    # get data types
-    data_types = dc.create_data_types()
 
     # just * means process all
     suppliers_to_process = config_dict['SUPPLIERS_TO_PROCESS']
     if suppliers_to_process == '*':
         suppliers_to_process = leveranciers.keys()
 
-    # read auto config file
-    configfile = os.path.join(config_dict['PROJECT_DIRECTORY'],
-        'config', 'auto_config.yaml')
-
-    with open(configfile, encoding = 'utf8', mode = "r") as infile:
-        auto_config = yaml.safe_load(infile)
-
-    auto_generate = dc.get_par(
-        config = auto_config,
-        key = 'data_dicts',
-        default = leveranciers.keys(),
-    )
-
     # process each supplier
-    for leverancier_id in auto_generate:
+    for leverancier_id in suppliers_to_process:
         dc.subheader(f'Supplier {leverancier_id}', '=')
 
+        # create schema_dir
         schema_dir = os.path.join(root_dir, 'schemas', leverancier_id)
-        # header_dir = os.path.join(schema_dir, 'auto_generate', 'data_dicts')
-        # if not os.path.exists(header_dir):
-        #     raise DiDoError(f'Directory {header_dir} does not exist')
+
+        # read auto config file
+        configfile = os.path.join(config_dir, leverancier_id, 'auto_config.yaml')
+
+        with open(configfile, encoding = 'utf8', mode = "r") as infile:
+            auto_config = yaml.safe_load(infile)
 
         df = create_code_bronbestand(
             schema_dir = schema_dir,
@@ -215,8 +189,8 @@ def ref_config(config_dict: dict):
         )
 
         logger.info(f'{len(df)} projects will be processed for config')
-        create_config_file(df, schema_dir)
-        create_meta_files(df, schema_dir)
+        create_config_file(df, config_dir, leverancier_id)
+        create_meta_files(df, leverancier_id, config_dir, schema_dir)
 
     # for -- supplier
 
