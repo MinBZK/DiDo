@@ -7,7 +7,6 @@ dido_common.py is a library with common routines for DiDo.
 import os
 import re
 import sys
-import psutil
 import logging
 import argparse
 import sqlalchemy
@@ -17,6 +16,8 @@ import pandas as pd
 from datetime import datetime
 from logging.config import dictConfig
 from os.path import join, splitext, dirname, basename, exists
+import psutil
+import s3_helper
 
 import yaml
 
@@ -257,6 +258,34 @@ def split_filename(filename: str) -> tuple:
     return dirpath, filebase, extension
 
 
+def get_files_from_dir(folder: str):
+    """ Return all files from directory, ignore directories
+
+    Args:
+        folder (str): directory to get files from
+
+    Returns:
+        list: list of files found
+    """
+    # remove space
+    folder = folder.strip()
+
+    # folder name should end with slash
+    if not folder.endswith('/'):
+        folder += '/'
+
+    # when requested from s3 bucket, call s3 helper function
+    if folder.startswith('s3://'):
+        files = s3_helper.s3_command_ls_return_fullpath(folder=folder)
+    else:
+        files = [item for item in os.listdir(folder)
+                    if os.path.isfile(os.path.join(folder, item))]
+
+    return files
+
+### get_files_from_dir ###
+
+
 def change_column_name(col_name: str, empty: str = 'kolom_') -> str:
     """align to snake_case; only alfanum and underscores, multiple underscores reduced to one
 
@@ -418,17 +447,22 @@ def read_cli():
     app_path = {'path': pad, 'name': fn, 'ext': ext}
 
     argParser = argparse.ArgumentParser()
-    argParser.add_argument("-c", "--compare", help="Compare action: 'dump' or 'compare'",
+    argParser.add_argument("-c", "--compare",
+                           help="Compare action: 'dump' or 'compare'",
                            choices=['compare', 'dump'],
                            default='compare', const='compare', nargs='?')
-    argParser.add_argument("-d", "--delivery", help="Name of delivery file in root/data directory")
+    argParser.add_argument("-d", "--delivery",
+                           help="Name of delivery file in root/data directory")
     argParser.add_argument("--date", help="Date to take snapshot of database ")
     argParser.add_argument("-p", "--project", help="Path to project directory")
-    argParser.add_argument("-r", "--reset", help="Empties the logfile before writing it",
+    argParser.add_argument("-r", "--reset",
+                           help="Empties the logfile before writing it",
                            action='store_const', const='reset')
     argParser.add_argument("-s", "--supplier", help="Name of supplier")
-    argParser.add_argument("-t", "--target", help="File name to read target data from")
-    argParser.add_argument("-v", "--view", help="View database table in dido_compare",
+    argParser.add_argument("-t", "--target",
+                           help="File name to read target data from")
+    argParser.add_argument("-v", "--view",
+                           help="View database table in dido_compare",
                            action='store_const', const='view' )
     argParser.add_argument("--Yes",  help="Answer Yes to all questions",
                            action='store_const', const='Ja')
@@ -712,8 +746,18 @@ def get_config_file(config_path: str, config_name: str):
 ### get_config_file ###
 
 
-def read_delivery_config(project_path: str, delivery_filename: str):
+def read_delivery_config(project_path: str,
+                         delivery_filename: str = 'delivery.yaml'):
+    """Read a delivery.yaml file
 
+    Args:
+        project_path (str): path to the project
+        delivery_filename (str): filename of the delivery file
+            (defaults to delivery.yaml)
+
+    Returns:
+        dict: the delivery.yaml file
+    """
     delivery_filename = os.path.join(project_path, 'data', delivery_filename)
     with open(delivery_filename, encoding = 'utf8', mode = "r") as infile:
         delivery = yaml.safe_load(infile)
@@ -754,15 +798,87 @@ def load_credentials(project_dir: str) -> dict:
 ### load_credentials ###
 
 
+def compute_periods(period: str, value: int, servers: dict):
+    # get levering_rapportage period table from odl
+    periods = st.table_to_dataframe(
+        table_name = 'odl_rapportageperiodes_description',
+        sql_server_config = servers['ODL_SERVER_CONFIG'],
+    )
+
+    # split into year-<letter><int> anf check
+    try:
+        year = period.split('-', 1)[0]
+        rest = period.split('-', 1)[1]
+        qualifier = rest[0]
+        if qualifier not in ['I', 'J']:
+            counter = int(rest[1:])
+
+        if len(year) != 4:
+            raise DiDoError('*** Year should be between 1000-9999')
+
+        year = int(year)
+
+    except Exception as err:
+        logger.error('compute_periods: ' + str(err))
+        raise DiDoError('*** Malformed period, should be of form: '
+                        'YYYY-<period><int>')
+
+    # try..except
+
+    # get allowed periods and set index to allowed periods
+    allowed = periods['leverancier_kolomtype'].tolist()
+    periods = periods.set_index('leverancier_kolomtype')
+    if qualifier not in allowed:
+        raise DiDoError(f'*** Qualifier {period} not allowed: {allowed}')
+
+    # get max value for qualifier
+    domain = periods.loc[qualifier, 'domein']
+    if qualifier not in ['A', 'I', 'J']:
+        max_value = int(domain.split(':')[1])
+    else:
+        max_value = 0
+
+    # apply operation
+    if qualifier == 'J':
+        year += value
+        counter = ''
+
+    elif qualifier in ['A']:
+        counter += value
+        if counter < 1:
+            raise DiDoError(f'*** Compute_period: qualifier "A": value '
+                            f' < 1: {counter}')
+
+    elif qualifier != 'I':
+        counter += value
+        while counter > max_value:
+            year += 1
+            counter -= max_value
+
+        while counter < 1:
+            year -= 1
+            counter += max_value
+
+        if year < 1000 or year > 9999:
+            raise DiDoError(f'*** Compute_period: year {year} exceeds bounds '
+                             '[1000-9999]')
+
+        # if
+    # if
+
+    new_period = f'{year}-{qualifier}{counter}'
+
+    return new_period
+
+### compute_periods ###
+
+
 def center_text(text: str, width: int):
     delta = width - len(text)
     delta_2 = int(delta / 2)
     front = delta_2
     back = delta - delta_2
     text = '*' + front * ' ' + text + back * ' ' + '*'
-    # dido = '*' + dido + '*'
-    # asterisks = len(dido) * '*'
-    # between = '*' + (len(dido) - 2) * ' ' + '*'
 
     return text
 

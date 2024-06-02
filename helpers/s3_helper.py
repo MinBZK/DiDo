@@ -61,7 +61,6 @@ def s3_command_ls_return_fullpath(folder:str='', bucket:str='') -> list:
         # if not folder.endswith('/'):
         #     folder += '/'
 
-    print(folder)
     # run process
     if len(bucket) < 1:
         cmd = ['s3cmd', 'ls', folder]

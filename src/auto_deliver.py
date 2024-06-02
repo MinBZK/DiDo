@@ -15,11 +15,11 @@ import os
 import re
 import sys
 import time
-import yaml
-import shutil
+# import yaml
+# import shutil
 import pandas as pd
 
-from datetime import datetime
+# from datetime import datetime
 
 # Don't forget to set PYTHONPATH to your python library files
 # export PYTHONPATH=/path/to/dido/helpers/map
@@ -29,7 +29,6 @@ import simple_table as st
 import s3_helper
 
 from dido_common import DiDoError
-from dido_list import dido_list
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
@@ -84,6 +83,32 @@ def find_project_name(string_dict: list,
 ### find_project_name ###
 
 
+def find_previous_filename(config: dict,
+                        header: bool,
+                           project_name: str,
+                           periode: str,
+                           table_list: list,
+                           pad: str,
+                           servers: dict,
+                          ):
+    new_period = dc.compute_periods(periode, -1, servers)
+
+    data_dict, header_dict = collect_files_and_headers(
+        config = config,
+        periodes = [new_period],
+        table_list = table_list,
+        pad = pad,
+    )
+
+    if header:
+        filename = find_project_name(header_dict, 3, project_name, new_period)
+    else:
+        filename = find_project_name(data_dict, 2, project_name, new_period)
+
+    return filename, new_period
+
+### find_previous_filename ###
+
 def collect_files_and_headers(config: dict,
                               periodes: list,
                               table_list: list,
@@ -98,10 +123,10 @@ def collect_files_and_headers(config: dict,
         header_pattern = re.compile(regex)
 
         path = os.path.join(pad, periode) + '/'
-        logger.info(f'Fetching files from {path}')
-        files = s3_helper.s3_command_ls_return_fullpath(folder = path)
+        logger.debug(f'Fetching files from {path}')
+        files = dc.get_files_from_dir(path)
 
-        logger.info(f'Redirecting {len(files)} files')
+        logger.debug(f'Redirecting {len(files)} files')
         data_files = []
         header_files = []
         for file in files:
@@ -131,6 +156,7 @@ def collect_project_info(config: dict,
                          periodes: list,
                          table_list: list,
                          pad: str,
+                         servers: dict,
                         ):
 
     data_dict, header_dict = collect_files_and_headers(
@@ -151,26 +177,59 @@ def collect_project_info(config: dict,
             project['table_name'] = table_name
             project['project_name'] = project_name
 
+            # find data and header file associated with project name
             filename = find_project_name(data_dict, 2, project_name, periode)
             headername = find_project_name(header_dict, 3, project_name, periode)
+            true_period = periode
 
-            if len(filename) < 0:
+            # when there is no associated file found, look for it in
+            # the previous period
+            if len(filename) < 1 and config['USE_PREVIOUS_WHEN_OMITTED']:
+                filename, true_period = find_previous_filename(
+                    config = config,
+                    header = False,
+                    project_name = project_name,
+                    periode = periode,
+                    table_list = table_list,
+                    pad = pad,
+                    servers = servers,
+                )
+
+            if len(headername) < 1 and config['USE_PREVIOUS_WHEN_OMITTED']:
+                headername, true_period = find_previous_filename(
+                    config = config,
+                    header = True,
+                    project_name = project_name,
+                    periode = periode,
+                    table_list = table_list,
+                    pad = pad,
+                    servers = servers,
+                )
+
+            if len(filename) < 1:
                 logger.warning(f'!!! Project without file name: {project_name}')
-            elif len(headername) < 0:
+            elif len(headername) < 1:
                 logger.warning(f'!!! Project without header file: {project_name}')
             else:
-                logger.info(filename)
+                logger.info(f'{filename} from {true_period}')
                 splits = filename.split('_', 2)
                 leveringsdatum = splits[0].strip()
                 code_bronbestand = splits[1].upper().strip()
-                project['data_name'] = os.path.join(pad, periode, filename)
-                project['header_name'] = os.path.join(pad, periode, headername)
+                project['data_name'] = os.path.join(pad, true_period, filename)
+                project['header_name'] = os.path.join(pad, true_period, headername)
                 project['levering_rapportageperiode'] = periode
                 project['code_bronbestand'] = code_bronbestand
                 project['leveringsdatum'] = leveringsdatum
 
-                data_dict[periode].remove(filename)
-                header_dict[periode].remove(headername)
+                try:
+                    data_dict[periode].remove(filename)
+                except:
+                    pass
+
+                try:
+                    header_dict[periode].remove(headername)
+                except:
+                    pass
 
             # if
 
@@ -200,22 +259,47 @@ def create_deliveries(projects: dict,
                       filename: str,
                      ):
     deliveries = ''
+    # enumerate over all projects
     for project_key in projects.keys():
-        deliveries += '    ' + project_key + ':\n'
         project = projects[project_key]
+        proj_deliv = ''
+
+        # and over all periods
         for periode in periodes:
             proj_periode = project[periode]
-            filled = template.format(**proj_periode)
-            deliveries += filled
 
-    variables = {'deliveries': deliveries,
-                 'supplier_name': supplier_id
-                }
+            # check if project has a data_name, if not: no data file
+            if 'data_name' in proj_periode.keys():
+                filled = template.format(**proj_periode)
+                proj_deliv += filled
 
-    delivery_output = delivery_template.format(**variables)
+            else:
+                logger.warning(f'!!! No data for project {project_key}/{periode}')
 
-    with open(filename, 'w') as outfile:
-        outfile.write(delivery_output)
+        # for
+
+        # Only add delivery when project contains data
+        if len(proj_deliv) > 0:
+            deliveries += '    ' + project_key + ':\n' + proj_deliv
+
+    # for
+
+    # only when there are deliveries, write to delivery file
+    if len(deliveries) > 0:
+        variables = {'deliveries': deliveries,
+                    'supplier_name': supplier_id
+                    }
+
+        delivery_output = delivery_template.format(**variables)
+
+        with open(filename, 'w') as outfile:
+            outfile.write(delivery_output)
+
+    else:
+        logger.info('')
+        logger.error('*** Empty project directory: sure this is the correct one?')
+
+    # if
 
     return
 
@@ -225,6 +309,23 @@ def create_deliveries(projects: dict,
 def ref_deliver(config_dict: dict):
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
+
+    # new_period = dc.compute_periods('2023-Q2', 1, db_servers)
+    # print(new_period)
+    # new_period = dc.compute_periods('2023-Q2', 4, db_servers)
+    # print(new_period)
+    # new_period = dc.compute_periods('2023-M2', -15, db_servers)
+    # print(new_period)
+    # new_period = dc.compute_periods('2023-J', 3, db_servers)
+    # print(new_period)
+    # new_period = dc.compute_periods('2023-D2', 800, db_servers)
+    # print(new_period)
+    # new_period = dc.compute_periods('1001-A2', 368, db_servers)
+    # print(new_period)
+    # new_period = dc.compute_periods('1001-A2', -3, db_servers)
+    # print(new_period)
+    # new_period = dc.compute_periods('1001-D2', -368, db_servers)
+    # print(new_period)
 
     # get project environment
     root_dir = config_dict['ROOT_DIR']
@@ -265,9 +366,18 @@ def ref_deliver(config_dict: dict):
         pad = os.path.join(auto_delivery['DATA_PATH'])
         table_list = get_table_names(leverancier_id, db_servers)
 
-        projects = collect_project_info(auto_delivery, periodes, table_list, pad)
+        projects = collect_project_info(
+            config = auto_delivery,
+            periodes = periodes,
+            table_list = table_list,
+            pad = pad,
+            servers = db_servers,
+        )
 
+        logger.info('')
         logger.info(f'A total of {len(projects)} files will be delivered')
+        logger.info('')
+
         filename = os.path.join(root_dir, 'data', config_dict['DELIVERY_FILE'])
         create_deliveries(
             projects = projects,

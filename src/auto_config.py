@@ -110,9 +110,8 @@ def create_code_bronbestand(schema_dir: str,
     pattern = re.compile(regex)
 
     # get the header files from s3
-    files = s3_helper.s3_command_ls_return_fullpath(
-        folder = dd_path,
-    )
+    # files = s3_helper.s3_command_ls_return_fullpath(folder=dd_path)
+    files = dc.get_files_from_dir(dd_path)
 
     # select those that conform to header_pattern
     result = []

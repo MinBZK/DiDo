@@ -320,7 +320,7 @@ def load_data(supplier_config: dict,
                 engine = 'c',
                 encoding = encoding,
             )
-        except pandas.errors.ParserError as err:
+        except pd.errors.ParserError as err:
             raise DiDoError(str(err))
 
     # if
