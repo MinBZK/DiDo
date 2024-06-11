@@ -55,7 +55,8 @@ def get_info(table_name: str, tables_name: dict, server_config: dict):
             result = st.sql_select(
                 table_name = table_name,
                 columns = 'DISTINCT levering_rapportageperiode, count(*)',
-                where = 'group by levering_rapportageperiode order by levering_rapportageperiode',
+                where = 'GROUP BY levering_rapportageperiode '
+                        'ORDER BY levering_rapportageperiode',
                 verbose = False,
                 sql_server_config = server_config
             )
@@ -75,8 +76,10 @@ def get_info(table_name: str, tables_name: dict, server_config: dict):
 
     return info
 
+### get_info ###
 
-def get_leveranties(project_name: str, supplier: str, server_config: dict) -> dict:
+
+def get_deliveries(project_name: str, supplier: str, server_config: dict) -> dict:
     """ get all leveranties for this supplier
 
     Args:
@@ -96,8 +99,10 @@ def get_leveranties(project_name: str, supplier: str, server_config: dict) -> di
 
     return tables_info
 
+### get_deliveries ###
 
-def display_leveranciers(project_name: str, leveranciers: dict, data_server_config: dict):
+
+def fetch_suppliers(leveranciers: dict, data_server_config: dict):
     """ Displays the supplies of of specific supplier
 
     Args:
@@ -110,11 +115,12 @@ def display_leveranciers(project_name: str, leveranciers: dict, data_server_conf
     leverancier_met_data = []
 
     for key in leveranciers.keys():
-        # leveranties = get_leveranties(project_name, key, data_server_config)
         leverancier_met_data.append(key)
         logger.info(f' - {key}')
 
     return leverancier_met_data
+
+### fetch_suppliers ###
 
 
 def show_database(title: str, config: dict):
@@ -127,6 +133,57 @@ def show_database(title: str, config: dict):
     logger.info('')
 
     return
+
+### show_database ###
+
+
+def get_table_names(supplier_id: str, servers: dict):
+    """ Get a dataframe of all tables of a schema
+
+    Args:
+        supplier_id (str): name of the supplier
+        schema (str): name of database schema to request all tables from
+        servers (dict): list of all database servers
+
+    Returns:
+        A dataframe with information on all tables in schema
+    """
+    data_server = servers['DATA_SERVER_CONFIG']
+    query = "SELECT * FROM information_schema.tables WHERE " \
+           f"table_schema = '{data_server['POSTGRES_SCHEMA']}';"
+    result = st.query_to_dataframe(query, sql_server_config = data_server)
+
+    # result = result[result['table_name'].str.contains('schema_data')]
+    tables = result['table_name'].tolist()
+
+    return tables
+
+### get_table_names ###
+
+
+def select_tables_from_supplier(tables: list,
+                                supplier_id: str,
+                                project_idx: int,
+                               ):
+
+    new_tables = []
+    projects = []
+    for supplier in tables:
+        if supplier.startswith(supplier_id):
+            new_tables.append(supplier)
+            splits = supplier.split('_')
+            projects.append(splits[project_idx])
+
+    projects = set(projects)
+
+    return new_tables, projects
+
+### select_tables_from_supplier ###
+
+
+### @@@ Hier gebleven
+def delete_tables(tables_names: list, servers: config):
+    for table_name in
 
 
 def dido_kill(header: str):
@@ -149,12 +206,10 @@ def dido_kill(header: str):
     foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
     columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
     report_periods = config_dict['REPORT_PERIODS']
     parameters = config_dict['PARAMETERS']
 
@@ -163,14 +218,14 @@ def dido_kill(header: str):
     report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
     sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'remove-deliveries.sql')
 
-    show_database('Tabellen worden vernietigd in de volgende database', data_server_config)
+    show_database('Tables are destroyed in the following database',
+                  data_server_config)
     # if there is no supplier that received any supply, there is nothing to remove.
     # The program terminates
-    n_suppliers = display_leveranciers(project_name, leveranciers, data_server_config)
+    n_suppliers = fetch_suppliers(leveranciers, data_server_config)
     if len(n_suppliers) < 1:
         logger.info('')
-        logger.warning('!!! Er zijn geen leveranciers te bekennen in config.yaml.')
-        logger.warning('!!! Er valt niets te verwijderen, het programma wordt beeindigd.')
+        logger.warning('!!! No suppliers in config.yaml, DiDo quits')
 
         sys.exit()
 
@@ -181,77 +236,51 @@ def dido_kill(header: str):
     if supplier_to_be_killed is not None:
         leverancier = supplier_to_be_killed
         logger.info(f'Leverancier gekregen vanuit commandline: {leverancier}')
+
     else:
         leverancier = ''
 
+    leverancier = 'pdirekt'
     while leverancier not in leveranciers:
-        prompt = 'Typ de naam van de leverancier in: '
+        prompt = 'Enter supplier name (ctrl-C to exit): '
         leverancier = input(prompt).lower()
         logger.debug(f'{prompt}{leverancier}')
 
         # check if it exists
         if leverancier not in leveranciers:
-            logger.error(f'*** Geen bestaande leveranciersnaam in dit project: "{leverancier}"')
-            logger.info('[Gebruik ctrl-C als u wilt stoppen zonder iets te vernietigen]')
+            logger.error(f'*** Supplier "{leverancier}" not specified in config.yaml')
 
     # while
 
-    data_tables = dc.get_table_names(project_name, leverancier, 'data')
-    desc_tables = dc.get_table_names(project_name, leverancier, 'description')
-    tables_to_remove = []
-    schema = data_server_config['POSTGRES_SCHEMA']
-    for key in data_tables.keys():
-        tables_to_remove.append(schema + '.' + data_tables[key])
-        tables_to_remove.append(schema + '.' + desc_tables[key])
+    table_list = get_table_names(leverancier, db_servers)
+    table_list, project_names = select_tables_from_supplier(
+        tables = table_list,
+        supplier_id = leverancier,
+        project_idx = 1,
+    )
 
-    logger.info('')
-    n = 0
-    logger.info(f'*** De volgende {len(tables_to_remove)} tabellen van *{leverancier}* worden vernietigd:')
-    for table in tables_to_remove:
-        # table contains schema before name, not accepted by table_exists, remove it
-        table = table.split('.')[1]
-        if st.table_exists(table, sql_server_config = data_server_config):
-            n_records = st.table_size(table, sql_server_config = data_server_config)
-            logger.info(f' - {table} bevat {n_records} records')
-            n += 1
-        else:
-            logger.info(f' - {table} bestaat niet')
-
-    logger.info('')
-
-    if n > 0:
+    if len(table_list) < 1:
         logger.info('')
-        if yes_to_all_questions is not None:
-            logger.info(f'Reponse via commandline: {yes_to_all_questions}')
+        logger.info(f'No projects for {leverancier}, DiDo quits.')
 
-            response = yes_to_all_questions
-        else:
-            prompt = 'Weet je het heel zeker? (Ja/nee): '
-            response = input(prompt)
-            logger.debug(prompt + response)
+        sys.exit()
 
-        if response =='Ja':
+    logger.info('The following projects and all of their data will be destroyed')
+    for name in project_names:
+        logger.info(f' - {name}')
 
-            # prepare SQL statements and run these thru simple_table
-            logger.info('')
-            table_names = dc.get_table_names(project_name, leverancier)
-            sql = ''
-            for table in tables_to_remove:
-                sql += f'DROP TABLE IF EXISTS {table} CASCADE;\n'
+    logger.info('')
+    prompt = 'Are you sure to destroy all data (Ja/Nee): '
+    leverancier = input(prompt)
+    logger.debug(f'{prompt}{leverancier}')
 
-            logger.debug(sql)
-            st.sql_statement(sql, verbose = True, sql_server_config = data_server_config)
-            logger.info('Tabellen zijn verwijderd')
+    if prompt != 'Ja':
+        logger.info('Opting to not destroy all data')
+        logger.info('')
 
-        else:
-            logger.info('Ok, er is niets verwijderd')
+        sys.exit()
 
-        # if
 
-    else:
-        logger.info(f'{leverancier} heeft geen tabellen, er wordt niets vernietigd.')
-
-    # if
 
     cpu = time.time() - cpu
     logger.info('')
