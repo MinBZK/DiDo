@@ -1087,6 +1087,81 @@ def prepare_one_delivery(cargo: dict,
 ### prepare_one_delivery ###
 
 
+def prepare_cargo(config_dict: dict,
+                  delivery_config: dict,
+                  leverancier_id: str,
+                  leverancier: dict,
+                  project_key: str,
+                  project: dict,
+                  cargo_name: str,
+                  cargo_dict: dict,
+                 ):
+
+    # get the database server definitions
+    db_servers = config_dict['SERVER_CONFIGS']
+    root_dir = config_dict['ROOT_DIR']
+    overwrite = dc.get_par(delivery_config, 'ENFORCE_PREP_IF_TABLE_EXISTS', False)
+
+    # get real_types
+    allowed_datatypes, sub_types = dc.create_data_types()
+    real_types = sub_types['real']
+
+    # process only specified deliveries
+    deliveries_to_process = dc.get_par(
+        config = delivery_config,
+        key = 'DELIVERIES_TO_PROCESS',
+        default = '*',
+    )
+    if deliveries_to_process == '*':
+        deliveries_to_process = cargo_dict.keys()
+
+    dc.subheader(f'Delivery: {cargo_name}', '.')
+
+    # get cargo associated with the cargo_name
+    cargo = cargo_dict[cargo_name]
+    cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
+
+    # add config and delivery dicts as they are needed while processing the cargo
+    cargo['config'] = config_dict
+    cargo['delivery'] = delivery_config
+
+    # present all deliveries and the selected one
+    logger.info('Delivery configs supplied (> is selected)')
+    for key in cargo_dict.keys():
+        if key == cargo_name:
+            logger.info(f" > {key}")
+        else:
+            logger.info(f" - {key}")
+        # if
+    # for
+
+    # delivery exists in the database. If so, skip this delivery
+    if dc.delivery_exists(cargo, leverancier_id, project_key, db_servers):
+        logger.info('')
+        logger.error(f'*** delivery already exists: '
+                    f'{leverancier_id} - {cargo_name}, skipped')
+
+        if not overwrite:
+            logger.info('Specify ENFORCE_PREP_IF_TABLE_EXISTS: yes in your delivery.yaml')
+            logger.info('if you wish to check the data quality')
+
+            return
+
+        else:
+            logger.warning('!!! ENFORCE_PREP_IF_TABLE_EXISTS: yes specified, '
+                        'data will be overwritten')
+        # if
+    # if
+    data_description = find_data_files(cargo, leverancier_id, root_dir)
+    cargo['data_description'] = data_description
+
+    prepare_one_delivery(cargo, leverancier_id, project_key, real_types)
+
+    return
+
+### prepare_cargo ###
+
+
 def dido_data_prep(header: str):
     cpu = time.time()
 
@@ -1104,29 +1179,17 @@ def dido_data_prep(header: str):
 
     # get project environment
     # project_name = config_dict['PROJECT_NAME']
-    root_dir = config_dict['ROOT_DIR']
-    work_dir = config_dict['WORK_DIR']
+    # work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-
-    overwrite = dc.get_par(delivery_config, 'ENFORCE_PREP_IF_TABLE_EXISTS', False)
-
-    # get the database server definitions
-    db_servers = config_dict['SERVER_CONFIGS']
 
     # select which suppliers to process
     suppliers_to_process = dc.get_par(delivery_config, 'SUPPLIERS_TO_PROCESS', '*')
-
-    # get real_types
-    allowed_datatypes, sub_types = dc.create_data_types()
-    real_types = sub_types['real']
 
     # just * means process all
     if suppliers_to_process == '*':
         suppliers_to_process = leveranciers.keys()
 
     ok = True
-
-    # process each supplier
     for leverancier_id in suppliers_to_process:
         dc.subheader(f'{leverancier_id}', '=')
 
@@ -1144,65 +1207,20 @@ def dido_data_prep(header: str):
             # get all cargo from the delivery_dict
             cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
 
-            # process only specified deliveries
-            deliveries_to_process = dc.get_par(
-                config = delivery_config,
-                key = 'DELIVERIES_TO_PROCESS',
-                default = '*',
-            )
-            if deliveries_to_process == '*':
-                deliveries_to_process = cargo_dict.keys()
-
             # process all deliveries
             for cargo_name in cargo_dict.keys():
-                if cargo_name not in deliveries_to_process:
-                    logger.info(f'[Delivery {cargo_name} not in '
-                                 'DELIVERIES_TO_PROCESS, skipped]')
-                    continue
-
-                dc.subheader(f'Delivery: {cargo_name}', '.')
-
-                # get cargo associated with the cargo_name
-                cargo = cargo_dict[cargo_name]
-                cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
-
-                # add config and delivery dicts as they are needed while processing the cargo
-                cargo['config'] = config_dict
-                cargo['delivery'] = delivery_config
-
-                # present all deliveries and the selected one
-                logger.info('Delivery configs supplied (> is selected)')
-                for key in cargo_dict.keys():
-                    if key == cargo_name:
-                        logger.info(f" > {key}")
-                    else:
-                        logger.info(f" - {key}")
-                    # if
-                # for
-
-                # delivery exists in the database. If so, skip this delivery
-                if dc.delivery_exists(cargo, leverancier_id, project_key, db_servers):
-                    logger.info('')
-                    logger.error(f'*** delivery already exists: '
-                                f'{leverancier_id} - {cargo_name}, skipped')
-
-                    if not overwrite:
-                        logger.info('Specify ENFORCE_PREP_IF_TABLE_EXISTS: yes in your delivery.yaml')
-                        logger.info('if you wish to check the data quality')
-
-                        continue
-
-                    else:
-                        logger.warning('!!! ENFORCE_PREP_IF_TABLE_EXISTS: yes specified, '
-                                    'data will be overwritten')
-                    # if
-                # if
-                data_description = find_data_files(cargo, leverancier_id, root_dir)
-                cargo['data_description'] = data_description
-
-                prepare_one_delivery(cargo, leverancier_id, project_key, real_types)
-
+                prepare_cargo(
+                    config_dict = config_dict,
+                    delivery_config = delivery_config,
+                    leverancier_id = leverancier_id,
+                    leverancier = leverancier,
+                    project_key = project_key,
+                    project = project,
+                    cargo_name = cargo_name,
+                    cargo_dict = cargo_dict,
+                )
             # for
+        # for
     # for
 
     cpu = time.time() - cpu
