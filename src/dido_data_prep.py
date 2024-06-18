@@ -1087,18 +1087,33 @@ def prepare_one_delivery(cargo: dict,
 ### prepare_one_delivery ###
 
 
-def prepare_cargo(leverancier_id: str,
+def prepare_cargo(config_dict: dict,
+                  delivery_config: dict,
+                  leverancier_id: str,
                   leverancier: dict,
                   project_key: str,
                   project: dict,
                   cargo_name: str,
-                  cargo_dict: dict
+                  cargo_dict: dict,
                  ):
 
-    if cargo_name not in deliveries_to_process:
-        logger.info(f'[Delivery {cargo_name} not in '
-                        'DELIVERIES_TO_PROCESS, skipped]')
-        return
+    # get the database server definitions
+    db_servers = config_dict['SERVER_CONFIGS']
+    root_dir = config_dict['ROOT_DIR']
+    overwrite = dc.get_par(delivery_config, 'ENFORCE_PREP_IF_TABLE_EXISTS', False)
+
+    # get real_types
+    allowed_datatypes, sub_types = dc.create_data_types()
+    real_types = sub_types['real']
+
+    # process only specified deliveries
+    deliveries_to_process = dc.get_par(
+        config = delivery_config,
+        key = 'DELIVERIES_TO_PROCESS',
+        default = '*',
+    )
+    if deliveries_to_process == '*':
+        deliveries_to_process = cargo_dict.keys()
 
     dc.subheader(f'Delivery: {cargo_name}', '.')
 
@@ -1164,27 +1179,18 @@ def dido_data_prep(header: str):
 
     # get project environment
     # project_name = config_dict['PROJECT_NAME']
-    root_dir = config_dict['ROOT_DIR']
-    work_dir = config_dict['WORK_DIR']
+    # work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-
-    overwrite = dc.get_par(delivery_config, 'ENFORCE_PREP_IF_TABLE_EXISTS', False)
-
-    # get the database server definitions
-    db_servers = config_dict['SERVER_CONFIGS']
 
     # select which suppliers to process
     suppliers_to_process = dc.get_par(delivery_config, 'SUPPLIERS_TO_PROCESS', '*')
-
-    # get real_types
-    allowed_datatypes, sub_types = dc.create_data_types()
-    real_types = sub_types['real']
 
     # just * means process all
     if suppliers_to_process == '*':
         suppliers_to_process = leveranciers.keys()
 
-    ok = Trueerik dahlman
+    ok = True
+    for leverancier_id in suppliers_to_process:
         dc.subheader(f'{leverancier_id}', '=')
 
         leverancier, projects = dc.get_supplier_projects(
@@ -1201,19 +1207,20 @@ def dido_data_prep(header: str):
             # get all cargo from the delivery_dict
             cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
 
-            # process only specified deliveries
-            deliveries_to_process = dc.get_par(
-                config = delivery_config,
-                key = 'DELIVERIES_TO_PROCESS',
-                default = '*',
-            )
-            if deliveries_to_process == '*':
-                deliveries_to_process = cargo_dict.keys()
-
             # process all deliveries
             for cargo_name in cargo_dict.keys():
-                prepare_cargo(cargo_name, cargo_dict)
+                prepare_cargo(
+                    config_dict = config_dict,
+                    delivery_config = delivery_config,
+                    leverancier_id = leverancier_id,
+                    leverancier = leverancier,
+                    project_key = project_key,
+                    project = project,
+                    cargo_name = cargo_name,
+                    cargo_dict = cargo_dict,
+                )
             # for
+        # for
     # for
 
     cpu = time.time() - cpu

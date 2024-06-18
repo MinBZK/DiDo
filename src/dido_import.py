@@ -1642,7 +1642,7 @@ def key_exists(table_name: str,
     where = f'{mutation_key} = {value}'
     if delete:
         where += f" AND {dc.ODL_DATUM_EINDE} = '"
-        where += f"{supplier_config['config']['END_OF_WORLD']}" + "'"
+        where += f"{datetime.date(supplier_config['config']['END_OF_WORLD'])}" + "'"
 
     result = st.sql_select(
         table_name = table_name,
@@ -1758,7 +1758,7 @@ def write_mutation_sql(data: pd.DataFrame,
                     delete = False,
                     value = value,
                     supplier_config = supplier_config,
-                    server_config = data_server_config
+                    server_config = data_server_config,
                     ):
 
                     sql_code += record_insert(
@@ -1783,7 +1783,7 @@ def write_mutation_sql(data: pd.DataFrame,
                     delete = True,
                     value = value,
                     supplier_config = supplier_config,
-                    server_config = data_server_config
+                    server_config = data_server_config,
                     ):
 
                     sql_code += record_delete(
@@ -1808,7 +1808,7 @@ def write_mutation_sql(data: pd.DataFrame,
                     delete = True,
                     value = value,
                     supplier_config = supplier_config,
-                    server_config = data_server_config
+                    server_config = data_server_config,
                     ):
 
                     sql_code += record_update(
@@ -2478,20 +2478,45 @@ def process_file(filename: str,
 ### process_file ###
 
 
-def import_cargo():
+def import_cargo(config_dict: dict,
+                 delivery_config: dict,
+                 leverancier_id: str,
+                 leverancier: dict,
+                 project_key: str,
+                 project: dict,
+                 cargo_name: str,
+                 cargo_dict: dict,
+                 report_csv_filename: str,
+                 report_doc_filename: str,
+                 sql_filename: str,
+                ):
 
-    if cargo_name not in deliveries_to_process:
-        logger.info(f'[Delivery {cargo_name} not in '
-                    'DELIVERIES_TO_PROCESS, skipped]')
-        continue
+    # get the database server definitions
+    db_servers = config_dict['SERVER_CONFIGS']
+    work_dir = config_dict['WORK_DIR']
+    table_desc = config_dict['PARAMETERS']['TABLES']
+    overwrite = dc.get_par(delivery_config, 'ENFORCE_PREP_IF_TABLE_EXISTS', False)
 
-    dc.subheader(f'Delivery: {cargo_name}', '-')
+    # get real_types
+    allowed_datatypes, sub_types = dc.create_data_types()
+    real_types = sub_types['real']
+
+    # process only specified deliveries
+    deliveries_to_process = dc.get_par(
+        config = delivery_config,
+        key = 'DELIVERIES_TO_PROCESS',
+        default = '*',
+    )
+    if deliveries_to_process == '*':
+        deliveries_to_process = cargo_dict.keys()
+
+    dc.subheader(f'Delivery: {cargo_name}', '.')
 
     # get cargo associated with the cargo_name
     cargo = cargo_dict[cargo_name]
     cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
 
-    # add config and delivery dicts as they are needed while processing the cargo
+    # add config and delivery dicts as they are needed processing the cargo
     cargo['config'] = config_dict
     cargo['delivery'] = delivery_config
 
@@ -2505,20 +2530,27 @@ def import_cargo():
         # if
     # for
 
-    # check if delivery exists in the database. If so, skip this delivery
+    if cargo_name not in deliveries_to_process:
+        logger.info('')
+        logger.info(f'!!! Delivery {cargo_name} not in DELIVERIES_TO_PROCESS, skipped.')
+        logger.info('')
+
+        return
+
+    # delivery exists in the database. If so, skip this delivery
     if dc.delivery_exists(cargo, leverancier_id, project_key, db_servers):
         logger.info('')
         logger.error(f'*** delivery already exists: '
                     f'{leverancier_id} - {cargo_name}, skipped')
 
         if not overwrite:
-            logger.info('Specify ENFORCE_IMPORT_IF_TABLE_EXISTS: yes in your delivery.yaml')
+            logger.info('Specify ENFORCE_PREP_IF_TABLE_EXISTS: yes in your delivery.yaml')
             logger.info('if you wish to check the data quality')
 
-            continue
+            return
 
         else:
-            logger.warning('!!! ENFORCE_IMPORT_IF_TABLE_EXISTS: yes specified, '
+            logger.warning('!!! ENFORCE_PREP_IF_TABLE_EXISTS: yes specified, '
                         'data will be overwritten')
         # if
     # if
@@ -2531,14 +2563,12 @@ def import_cargo():
         # COPY the table dictionary to  supplier dict,
         # else a shared reference will be copied
         # to avoid sharing, use the .copy() function
-        cargo[dc.TAG_TABLES][table_key] = \
-            table_desc[table_key].copy()
+        cargo[dc.TAG_TABLES][table_key] = table_desc[table_key].copy()
 
         # copy all keys, as they are string,
         # they are correctly copied
         for key in table_desc[table_key].keys():
-            cargo[dc.TAG_TABLES][table_key][key] = \
-                table_desc[table_key][key]
+            cargo[dc.TAG_TABLES][table_key][key] = table_desc[table_key][key]
 
         # for
     # for
@@ -2555,20 +2585,24 @@ def import_cargo():
     # iterate and process each data suplier
     origin = dc.get_par(cargo, 'origin', {'input': '<file>'})
 
-    process_supplier(
-        supplier_config = cargo,
-        config = config_dict,
-        error_codes = error_codes,
-        project_name = project_key,
-        origin = origin,
-        workdir = work_dir,
-        csv_file_object = csv_file,
-        doc_file_object = doc_file,
-        sql_file_object = sql_file,
-        server_configs = db_servers,
-    )
+    # open files and append information
+    with open(report_csv_filename, mode = 'a', encoding = "utf8") as csv_file:
+        with open(report_doc_filename, mode = 'a', encoding = "utf8") as doc_file:
+            with open(sql_filename, mode = 'a', encoding = "utf8") as sql_file:
+                process_supplier(
+                    supplier_config = cargo,
+                    config = config_dict,
+                    error_codes = error_codes,
+                    project_name = project_key,
+                    origin = origin,
+                    workdir = work_dir,
+                    csv_file_object = csv_file,
+                    doc_file_object = doc_file,
+                    sql_file_object = sql_file,
+                    server_configs = db_servers,
+                )
 
-    dc.report_ram('At end of loop')
+    # dc.report_ram('At end of loop')
     return
 
 ### import_cargo ###
@@ -2596,14 +2630,13 @@ def dido_import(header: str):
     db_servers = config_dict['SERVER_CONFIGS']
     # odl_server_config = db_servers['ODL_SERVER_CONFIG']
     # data_server_config = db_servers['DATA_SERVER_CONFIG']
-    # foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
+    # foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']het
 
     # get project environment
     # project_name = config_dict['PROJECT_NAME']
-    root_dir = config_dict['ROOT_DIR']
+    # root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    # columns_to_write = config_dict['COLUMNS']
     table_desc = config_dict['PARAMETERS']['TABLES']
 
     # create_zip = dc.get_par_par(delivery_config, 'SNAPSHOTS', 'zip', False)
@@ -2627,141 +2660,53 @@ def dido_import(header: str):
     config_dict['BEGINNING_OF_WORLD'] = bootstrap_data['BEGINNING_OF_WORLD']
     config_dict['END_OF_WORLD'] = bootstrap_data['END_OF_WORLD']
 
+    # Initialize the files
     with open(report_csv_filename, mode = 'w', encoding = "utf8") as csv_file:
-        with open(report_doc_filename, mode = 'w', encoding = "utf8") as doc_file:
-            with open(sql_filename, mode = 'w', encoding = "utf8") as sql_file:
-                # write transaction bracket for SQL
-                # sql_file.write(generate_sql_header())
-                sql_file.write('BEGIN; -- For all suppliers\n')
+        csv_file.write('')
+    with open(report_doc_filename, mode = 'w', encoding = "utf8") as doc_file:
+        doc_file.write('')
+    with open(sql_filename, mode = 'w', encoding = "utf8") as sql_file:
+        # write transaction bracket for SQL
+        sql_file.write('BEGIN; -- For all suppliers\n')
 
-                # copy table_desc as a template for information each leverancier
-                # has to deliver
-                for leverancier_id in suppliers_to_process:
-                    dc.subheader(f'Supplier: {leverancier_id}', '=')
+    # for each supplier, for each project, for each delivery: process it
+    for leverancier_id in suppliers_to_process:
+        dc.subheader(f'Supplier: {leverancier_id}', '=')
 
-                    leverancier, projects = dc.get_supplier_projects(
-                        config = delivery_config,
-                        supplier = leverancier_id,
-                        # project_name = project_name,
-                        delivery = leverancier_id,
-                        keyword = 'DELIVERIES',
-                    )
+        leverancier, projects = dc.get_supplier_projects(
+            config = delivery_config,
+            supplier = leverancier_id,
+            delivery = leverancier_id,
+            keyword = 'DELIVERIES',
+        )
 
-                    for project_key in projects.keys():
-                        dc.subheader(f'Project: {project_key}', '-')
-                        project = projects[project_key]
+        for project_key in projects.keys():
+            dc.subheader(f'Project: {project_key}', '-')
 
-                        # get all cargo from the delivery_dict
-                        cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
+            # get all cargo from the delivery_dict
+            cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
 
-                        # process only specified deliveries
-                        deliveries_to_process = dc.get_par(
-                            config = delivery_config,
-                            key = 'DELIVERIES_TO_PROCESS',
-                            default = '*',
-                        )
-                        if deliveries_to_process == '*':
-                            deliveries_to_process = cargo_dict.keys()
+            # process all deliveries
+            for cargo_name in cargo_dict.keys():
+                import_cargo(
+                    config_dict = config_dict,
+                    delivery_config = delivery_config,
+                    leverancier_id = leverancier_id,
+                    leverancier = leverancier,
+                    project_key = project_key,
+                    project = projects[project_key], # project,
+                    cargo_name = cargo_name,
+                    cargo_dict = cargo_dict,
+                    report_csv_filename = report_csv_filename,
+                    report_doc_filename = report_doc_filename,
+                    sql_filename = sql_filename,
+                )
+            # for
+        # for
+    # for
 
-                        # process all deliveries
-                        for cargo_name in cargo_dict.keys():
-                            if cargo_name not in deliveries_to_process:
-                                logger.info(f'[Delivery {cargo_name} not in '
-                                            'DELIVERIES_TO_PROCESS, skipped]')
-                                continue
-
-                            dc.subheader(f'Delivery: {cargo_name}', '-')
-
-                            # get cargo associated with the cargo_name
-                            cargo = cargo_dict[cargo_name]
-                            cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
-
-                            # add config and delivery dicts as they are needed while processing the cargo
-                            cargo['config'] = config_dict
-                            cargo['delivery'] = delivery_config
-
-                            # present all deliveries and the selected one
-                            logger.info('Delivery configs supplied (> is selected)')
-                            for key in cargo_dict.keys():
-                                if key == cargo_name:
-                                    logger.info(f" > {key}")
-                                else:
-                                    logger.info(f" - {key}")
-                                # if
-                            # for
-
-                            # check if delivery exists in the database. If so, skip this delivery
-                            if dc.delivery_exists(cargo, leverancier_id, project_key, db_servers):
-                                logger.info('')
-                                logger.error(f'*** delivery already exists: '
-                                            f'{leverancier_id} - {cargo_name}, skipped')
-
-                                if not overwrite:
-                                    logger.info('Specify ENFORCE_IMPORT_IF_TABLE_EXISTS: yes in your delivery.yaml')
-                                    logger.info('if you wish to check the data quality')
-
-                                    continue
-
-                                else:
-                                    logger.warning('!!! ENFORCE_IMPORT_IF_TABLE_EXISTS: yes specified, '
-                                                'data will be overwritten')
-                                # if
-                            # if
-
-                            dc.report_ram('At beginning of loop')
-
-                            cargo[dc.TAG_TABLES] = {}
-
-                            for table_key in table_desc.keys():
-                                # COPY the table dictionary to  supplier dict,
-                                # else a shared reference will be copied
-                                # to avoid sharing, use the .copy() function
-                                cargo[dc.TAG_TABLES][table_key] = \
-                                    table_desc[table_key].copy()
-
-                                # copy all keys, as they are string,
-                                # they are correctly copied
-                                for key in table_desc[table_key].keys():
-                                    cargo[dc.TAG_TABLES][table_key][key] = \
-                                        table_desc[table_key][key]
-
-                                # for
-                            # for
-
-                            error_codes = dc.load_odl_table(
-                                table_name = 'bronbestand_datakwaliteitcodes_data',
-                                server_config = db_servers['ODL_SERVER_CONFIG']
-                            )
-
-                            error_codes = error_codes.set_index('code_datakwaliteit')
-
-                            # for each leverancier, like dji, fmh, etc. create documentation and
-                            # DDL generation files
-                            # iterate and process each data suplier
-                            origin = dc.get_par(cargo, 'origin', {'input': '<file>'})
-
-                            process_supplier(
-                                supplier_config = cargo,
-                                config = config_dict,
-                                error_codes = error_codes,
-                                project_name = project_key,
-                                origin = origin,
-                                workdir = work_dir,
-                                csv_file_object = csv_file,
-                                doc_file_object = doc_file,
-                                sql_file_object = sql_file,
-                                server_configs = db_servers,
-                            )
-
-                            dc.report_ram('At end of loop')
-                        # for
-                    # for
-                # for
-
-                sql_file.write('COMMIT;\n')
-            # with
-        # with
-    # with
+    with open(sql_filename, mode = 'a', encoding = "utf8") as sql_file:
+        sql_file.write('COMMIT;\n')
 
     dc.report_psql_use(
         table = 'import-all-deliveries',
