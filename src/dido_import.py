@@ -1011,8 +1011,9 @@ def create_markdown_report(data: pd.DataFrame,
     """
     # get version info
     odl_server_config = supplier_config['config']['SERVER_CONFIGS']['ODL_SERVER_CONFIG']
+    table_name = 'bronbestand_bestandmeta_data'
     odl_meta_data = dc.load_odl_table(
-        table_name = 'bronbestand_bestand_meta_data',
+        table_name = table_name,
         server_config = odl_server_config,
     )
 
@@ -1175,10 +1176,10 @@ def generate_sql_header(table_name: str,
         sql += '-- Definition of history helper functions\n'
 
         values = {'table_name': table_name,
-                'supplier': supplier,
-                'schema': schema,
-                'key_id': key_id,
-                }
+                  'supplier': supplier,
+                  'schema': schema,
+                  'key_id': key_id,
+                 }
 
         in_sql = dc.load_sql()
         sql += in_sql.format(**values) + '\n\n'
@@ -1539,6 +1540,12 @@ def record_insert(table_name: str,
     sql = "-- Insert --\n"
     sql += f"INSERT INTO {schema}.{table_name}("
 
+    # insert all meta columns except bronbestand_recordnummer
+    for col in meta_cols:
+        # except for 'bronbestand_recordnummer', that is automatically added (serial)
+        if col != dc.ODL_RECORDNO:
+            sql += col + ', '
+
     # insert column names for all data columns
     for col in data.columns:
         # except for 'bronbestand_recordnummer', that is automatically added (serial)
@@ -1546,8 +1553,8 @@ def record_insert(table_name: str,
             sql += col + ', '
     sql = sql[:-2] + ')\n'
 
-    # add the first six columns as meta data:
-    # 'bronbestand_recordnummer', 'code_bronbestand', 'levering_rapportageperiode',
+    # add the first five columns as meta data (bronbestand_recordnummer omitted)
+    # 'code_bronbestand', 'levering_rapportageperiode',
     # 'record_datum_begin', 'record_datum_einde', 'sysdatum'
     sql += "VALUES ($$" + pakbon_record.iloc[0].loc[dc.ODL_CODE_BRONBESTAND] + "$$, "
     sql += "$$" + pakbon_record.iloc[0].loc[dc.ODL_LEVERING_FREK] + "$$, "
@@ -2036,15 +2043,22 @@ def process_supplier(supplier_config: dict,
     logger.info('')
     logger.info(f'=== {supplier_id} ===')
 
-    max_errors = supplier_config['delivery']['LIMITS']['max_errors']
-    sample_size = supplier_config['delivery']['LIMITS']['max_rows']
+    # fetch the limits from delivery.yaml, set defaults
+    dlv = dc.get_par_par(supplier_config, 'delivery', 'LIMITS', None)
+    max_errors = 1000
+    max_rows = 0
+    if dlv is not None:
+        max_errors = dc.get_par(dlv, 'max_errors', 1000)
+        max_rows = dc.get_par(dlv, 'max_rows', 0)
+
     tables_name = dc.get_table_names(project_name, supplier_id, 'data')
 
     data_server = server_configs['DATA_SERVER_CONFIG']
+    foreign_server = server_configs['FOREIGN_SERVER_CONFIG']
+
     first_time_table_import = False
     schema_name = dc.get_table_name(project_name, supplier_id, dc.TAG_TABLE_SCHEMA, 'description')
 
-    foreign_server = server_configs['FOREIGN_SERVER_CONFIG']
 
     supplier_schema = dc.load_schema(schema_name, data_server)
     supplier_schema = supplier_schema.set_index('kolomnaam')
@@ -2162,7 +2176,7 @@ def process_supplier(supplier_config: dict,
                     pakbon_record = pakbon_record,
                     error_codes = error_codes,
                     max_errors = max_errors,
-                    sample_size = sample_size,
+                    sample_size = max_rows,
                     project_name = project_name,
                     csv_file = csv_file_object,
                     doc_file = doc_file_object,
@@ -2475,25 +2489,28 @@ def dido_import(header: str):
     dc.display_dido_header(header, config_dict)
     delivery_filename = args.delivery
 
-    delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], delivery_filename)
+    delivery_config = dc.read_delivery_config(
+        project_path = config_dict['PROJECT_DIR'],
+        delivery_filename = args.delivery,
+    )
+
     overwrite = dc.get_par(delivery_config, 'ENFORCE_IMPORT_IF_TABLE_EXISTS', False)
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
-    odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    data_server_config = db_servers['DATA_SERVER_CONFIG']
-    foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
+    # odl_server_config = db_servers['ODL_SERVER_CONFIG']
+    # data_server_config = db_servers['DATA_SERVER_CONFIG']
+    # foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
     # project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
+    # columns_to_write = config_dict['COLUMNS']
     table_desc = config_dict['PARAMETERS']['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
 
-    create_zip = dc.get_par_par(delivery_config, 'SNAPSHOTS', 'zip', False)
+    # create_zip = dc.get_par_par(delivery_config, 'SNAPSHOTS', 'zip', False)
 
     # select which suppliers to process
     suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
@@ -2540,10 +2557,23 @@ def dido_import(header: str):
 
                         # get all cargo from the delivery_dict
                         cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
-                        # cargo_dict = dc.get_cargo(projects, project_key)
+
+                        # process only specified deliveries
+                        deliveries_to_process = dc.get_par(
+                            config = delivery_config,
+                            key = 'DELIVERIES_TO_PROCESS',
+                            default = '*',
+                        )
+                        if deliveries_to_process == '*':
+                            deliveries_to_process = cargo_dict.keys()
 
                         # process all deliveries
                         for cargo_name in cargo_dict.keys():
+                            if cargo_name not in deliveries_to_process:
+                                logger.info(f'[Delivery {cargo_name} not in '
+                                            'DELIVERIES_TO_PROCESS, skipped]')
+                                continue
+
                             dc.subheader(f'Delivery: {cargo_name}', '-')
 
                             # get cargo associated with the cargo_name
@@ -2603,7 +2633,7 @@ def dido_import(header: str):
                             # for
 
                             error_codes = dc.load_odl_table(
-                                table_name = 'bronbestand_datakwaliteit_codes_data',
+                                table_name = 'bronbestand_datakwaliteitcodes_data',
                                 server_config = db_servers['ODL_SERVER_CONFIG']
                             )
 

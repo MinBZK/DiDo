@@ -182,8 +182,26 @@ def select_tables_from_supplier(tables: list,
 
 
 ### @@@ Hier gebleven
-def delete_tables(tables_names: list, servers: config):
-    for table_name in
+def delete_tables(table_names: list, servers: dict):
+    server = servers['DATA_SERVER_CONFIG']
+    schema = server['POSTGRES_SCHEMA']
+    query = 'DROP TABLE '
+    for table_name in table_names:
+        query += f'{schema}.{table_name}, '
+
+    query = query [:-2] + ';'
+    print(query)
+
+    result = st.sql_statement(
+        statement = query,
+        sql_server_config = server,
+    )
+
+    print(result)
+
+    return
+
+### delete_tables ###
 
 
 def dido_kill(header: str):
@@ -271,16 +289,16 @@ def dido_kill(header: str):
 
     logger.info('')
     prompt = 'Are you sure to destroy all data (Ja/Nee): '
-    leverancier = input(prompt)
-    logger.debug(f'{prompt}{leverancier}')
+    response = input(prompt)
+    logger.debug(f'{prompt}{response}')
 
-    if prompt != 'Ja':
+    if response != 'Ja':
         logger.info('Opting to not destroy all data')
         logger.info('')
 
         sys.exit()
 
-
+    delete_tables(table_list, db_servers)
 
     cpu = time.time() - cpu
     logger.info('')

@@ -9,7 +9,7 @@ gekopieerd wordt naar de working directory.
 
 Als de schemafiles ok zijn bevonden dan kunnen ze worden verwerkt met dido-create,
 anders moeten de schemafiles in de root directory worden aangepast. Wat in de
-work directrory staat wordt altijd overschreven door dido_begin.
+work directrory staat wordt altijd overschreven door dido_create_tables.
 """
 import os
 import sys
@@ -161,16 +161,16 @@ def apply_schema_odl(template: pd.DataFrame,
     schema = substitute_vars(schema, meta, data_dict, supplier_config)
     schema.columns = [col.strip().lower() for col in schema.columns]
     if template is None:
-        errmsg = f'* Schema "{filename}": de file "bronbestand_attribuut_meta.csv" file ontbreekt. '
-        errmsg += 'ODL generatie kan daar niet zonder.'
+        errmsg = f'*** apply_schema_odl: Schema DataFrame is None. ' \
+                  'ODL generatie kan daar niet zonder.'
         logger.error(errmsg)
 
         raise DiDoError(errmsg)
 
     # check if meta file exists
     if meta is None:
-        errmsg = f'* Schema "{filename}": de file "bronbestand_attribuut_meta.meta.csv" file '
-        errmsg += 'ontbreekt. ODL generatie kan daar niet zonder.'
+        errmsg = f'*** apply_schema_odl: Meta DataFrame is None. ' \
+                  'ontbreekt. ODL generatie kan daar niet zonder.'
         logger.error(errmsg)
 
         raise DiDoError(errmsg)
@@ -208,6 +208,7 @@ def apply_schema_odl(template: pd.DataFrame,
     # generate codes and keys
     for idx, _ in new_df.iterrows():
         col_name = schema.loc[idx, 'kolomnaam']
+
         # if description is lacking, notify the user and flag it
         beschrijving = schema.loc[idx, 'beschrijving'].strip()
         if len(beschrijving) == 0:
@@ -727,10 +728,14 @@ def write_markdown_doc(project_name: str,
     # project_name = supplier_config['config']['PROJECT_NAME']
 
     # get the meta and schema dataframe
-    schema = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_SCHEMA]
+    tables = supplier_config[dc.TAG_TABLES]
+    schema = tables[dc.TAG_TABLE_SCHEMA][dc.TAG_SCHEMA]
+    meta_table_name = tables[dc.TAG_TABLE_SCHEMA]["table_root"]
+    meta_root = tables[dc.TAG_TABLE_META]["table_root"]
+    meta_table_name = f'bronbestand_{meta_root}_{dc.TAG_DATA}'
     odl_server_config = supplier_config['config']['SERVER_CONFIGS']['ODL_SERVER_CONFIG']
     odl_meta_data = dc.load_odl_table(
-        table_name = 'bronbestand_bestand_meta_data',
+        table_name = meta_table_name, # 'bronbestand_bestand_meta_data',
         server_config = odl_server_config,
     )
 
@@ -922,7 +927,7 @@ def write_sql(meta_data: pd.DataFrame,
 
             # create SQL for the description table
             if supplier_config[dc.TAG_TABLES][table_type]['create_description']:
-                description_tag = table_name + 'description'
+                description_tag = table_name + dc.TAG_DESC
                 sql_code = create_table_description(
                     supplier_config = supplier_config,
                     table_type = table_type,
@@ -1648,25 +1653,32 @@ def load_supplier_odl(supplier_config: dict, project_name: str, server_config: d
         logger.info(f'>> Doing table: {key}')
         table_info = supplier_config[dc.TAG_TABLES][key]
         table_root = table_info['table_root']
-        odl_name = f'bronbestand_{table_root}_description'
-        table_name = dc.get_table_name(project_name, supplier_id, table_root, 'description')
-
+        new_table_name = dc.get_table_name(
+            project_name = project_name,
+            supplier = supplier_id,
+            table_info = table_root,
+            postfix = dc.TAG_DESC,
+        )
 
         # create the table name
-        odl_name = 'bronbestand_' + table_root + '_description'
+        odl_name = f'bronbestand_{table_root}_{dc.TAG_DESC}'
 
         # if schema is <odl>, fetch the schema from ODL
-        if isinstance(table_info[dc.TAG_SCHEMA], str) and table_info[dc.TAG_SCHEMA] == '<odl>':
+        if isinstance(table_info[dc.TAG_SCHEMA], str) \
+            and table_info[dc.TAG_SCHEMA] == '<odl>':
+
             # fetch the table from the database and assign as dataframe to schema
             table_info[dc.TAG_SCHEMA] = dc.load_odl_table(odl_name, server_config)
 
             # change table name as table of this project and this supplier
-            table_info['table_name'] = table_name
+            table_info['table_name'] = new_table_name
 
         # if data is <odl>, fetch the data from ODL
-        if isinstance(table_info[dc.TAG_SCHEMA], str) and table_info[dc.TAG_DATA] == '<odl>':
+        if isinstance(table_info[dc.TAG_SCHEMA], str) \
+            and table_info[dc.TAG_DATA] == '<odl>':
+
             # create the table name
-            odl_name = 'bronbestand_' + table_root + '_data'
+            odl_name = f'bronbestand_{table_root}_{dc.TAG_DATA}'
 
             # fetch the table from the database and assign as dataframe to schema
             table_info[dc.TAG_DATA] = dc.load_odl_table(odl_name, server_config)
@@ -1677,7 +1689,9 @@ def load_supplier_odl(supplier_config: dict, project_name: str, server_config: d
 
         if key == dc.TAG_TABLE_META:
             # merge the metadata into the dataframe
-            metadata_data = dc.load_odl_table("bronbestand_bestand_meta_data", server_config)
+            # x = table_info['table_root']
+            meta_name = f'bronbestand_{table_root}_{dc.TAG_DATA}'
+            metadata_data = dc.load_odl_table(meta_name, server_config)
             df = merge_meta_data_with_description(table_info[dc.TAG_SCHEMA], table_info[dc.TAG_DATA])
             df = merge_meta_data_with_odl_data(supplier_config, df, metadata_data)
 
@@ -2048,7 +2062,7 @@ def dido_create(config_dict: dict):
             # add ODL info from database
             leverancier_config = load_supplier_odl(
                 supplier_config = leverancier_config,
-                project_name = project,
+                project_name = project_key,
                 server_config = odl_server_config,
             )
 
@@ -2066,8 +2080,9 @@ def dido_create(config_dict: dict):
                 dido_list()
 
             # create SQL to create tables
+            schema_name = 'bronbestand_' + 'attribuutmeta' + '_description'
             meta_table = dc.load_odl_table(
-                table_name = 'bronbestand_attribuut_meta_description',
+                table_name = schema_name,
                 server_config = odl_server_config,
             )
             leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_TABLE_META] = \

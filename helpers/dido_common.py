@@ -27,16 +27,16 @@ logger = logging.getLogger()
 
 # define constants
 # set defaults
-SCHEMA_TEMPLATE = 'bronbestand_attribuut_meta_description'
-META_TEMPLATE   = 'bronbestand_bestand_meta_description'
-EXTRA_TEMPLATE  = 'bronbestand_attribuut_extra_description'
+SCHEMA_TEMPLATE = 'bronbestand_attribuutmeta_description'
+META_TEMPLATE   = 'bronbestand_bestandmeta_description'
+EXTRA_TEMPLATE  = 'bronbestand_attribuutextra_description'
 
 # TAG_TABLE refer to TABLES indices in the confif.yaml file
 TAG_TABLE_SCHEMA   = 'schema'
 TAG_TABLE_META     = 'meta'
 TAG_TABLE_EXTRA    = 'extra'
-TAG_TABLE_DELIVERY = 'levering_feit'
-TAG_TABLE_QUALITY  = 'datakwaliteit_feit'
+TAG_TABLE_DELIVERY = 'levering'
+TAG_TABLE_QUALITY  = 'datakwaliteit'
 
 # Tags refer to dictionary indices of each table
 TAG_TABLES = 'tables'
@@ -44,6 +44,7 @@ TAG_PREFIX = 'prefix'
 TAG_SUFFIX = 'suffix'
 TAG_SCHEMA = 'schema'
 TAG_DATA   = 'data'
+TAG_DESC   = 'description'
 
 # Required ODL columns to add to schema
 ODL_RECORDNO         = 'bronbestand_recordnummer'
@@ -386,24 +387,32 @@ def get_par(config: dict, key: str, default = None):
     Args:
         config (dict): dictuionary or DataFrame to fetch the value from
         key (str): value to find in dictionary
-        default (_type_, optional): default when value is not in dict. Defaults to None.
+        default (type, optional): default when value is not in dict.
+            Defaults to None.
+
+    Returns:
+        config[key] when key is present, else default when not None
+
+    Raises:
+        DiDoError when key not found and default is not None
     """
     if isinstance(config, pd.DataFrame):
         # config is DataFrame, look for key in index
         if key in config.index:
             return str(config.loc[key])
-
         else:
             return default
+        # if
 
     else:
         # dictionary, return config[key] when present
         if key in config:
             return config[key]
-
         else:
             return default
+        # if
 
+    # if
 ### get_par ###
 
 
@@ -641,7 +650,7 @@ def read_config(project_dir: str) -> dict:
     with open(configfile, encoding = 'utf8', mode = "r") as infile:
         config = yaml.safe_load(infile)
 
-    config['PROJECT_DIRECTORY'] = project_dir
+    config['PROJECT_DIR'] = project_dir
 
     sql = load_sql()
 
@@ -747,7 +756,8 @@ def get_config_file(config_path: str, config_name: str):
 
 
 def read_delivery_config(project_path: str,
-                         delivery_filename: str = 'delivery.yaml'):
+                         delivery_filename: str,
+                        ):
     """Read a delivery.yaml file
 
     Args:
@@ -758,7 +768,7 @@ def read_delivery_config(project_path: str,
     Returns:
         dict: the delivery.yaml file
     """
-    delivery_filename = os.path.join(project_path, 'data', delivery_filename)
+    delivery_filename = os.path.join(project_path, 'config', delivery_filename)
     with open(delivery_filename, encoding = 'utf8', mode = "r") as infile:
         delivery = yaml.safe_load(infile)
 
@@ -1112,9 +1122,8 @@ def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
         dict: dictionary of supplier addjusted with correct delivery
     """
     splits = cargo_name.split('_')
-    if len(splits) == 2:
-        if splits[0] != 'delivery':
-            raise DiDoError(f'*** Delivery should start with "delivery_", error for "{cargo_name}"')
+    if splits[0] != 'delivery':
+        raise DiDoError(f'*** Delivery should start with "delivery_", error for "{cargo_name}"')
 
     cargo_dict[ODL_LEVERING_FREK] = splits[1]
     cargo_dict['supplier_id'] = supplier_name

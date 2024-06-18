@@ -259,7 +259,7 @@ def load_data(supplier_config: dict,
     data_dicts = dc.get_par(supplier_config, 'data_description')
 
     # get the delivery_type, if omitted use mode: insert as default
-    # delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
+    delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
 
     cpu = time.time()
 
@@ -325,8 +325,6 @@ def load_data(supplier_config: dict,
 
     # if
 
-    # find out if the file contains headers or if a header sheet is provided
-
     # Fetch schema columns
     columns = schema['kolomnaam'].tolist()
 
@@ -390,8 +388,10 @@ def evaluate_headers(data: pd.DataFrame,
                      schema: pd.DataFrame,
                      headers: dict,
                      encoding: str,
+                     delivery_type: dict,
                     ):
-    """ Compares a list of headers with schema columns and flags inconsistencies
+    """ Compares a list of headers with schema columns and
+        flags inconsistencies
 
     Args:
         data (pd.DataFrame): data frame containing data and headers
@@ -401,6 +401,7 @@ def evaluate_headers(data: pd.DataFrame,
     """
     data_dicts = dc.get_par(supplier_config, 'data_description')
     header_columns = None
+    n_mutations = 0
 
     logger.info('')
 
@@ -439,9 +440,6 @@ def evaluate_headers(data: pd.DataFrame,
     # convert header_columns to list
     header_columns = list(header_columns)
 
-    # TODO: to strip the dido meta columns from the schema, simply the first
-    # 6 columns are stripped. This should be derived from the extra_columns themselves
-
     # 3. if not, get them from the schema
     if header_columns is None or len(header_columns) == 0:
         header_columns = schema['kolomnaam'].tolist()[6:]
@@ -451,15 +449,42 @@ def evaluate_headers(data: pd.DataFrame,
 
     header_columns = [dc.change_column_name(x) for x in header_columns]
 
+    # TODO: to strip the dido meta columns from the schema, simply the first
+    # 6 columns are stripped. This should be derived from the extra_columns themselves
+
     # remove meta columns from schema, currently the first six columns
     schema_columns = schema['kolomnaam'].tolist()[6:]
+
+    # 4. if mode is 'mutate', add the mutation column(s)
+    if delivery_type is not None:
+        if delivery_type['mode'] == 'mutate':
+            instruction_list = dc.get_par(
+                config = delivery_type,
+                key = 'mutation_instructions',
+                default = None
+            )
+
+            if instruction_list is None:
+                error = True
+                logger.error(f'Mode = mutate requires mutation_instructions')
+
+            else:
+                # TODO: mutation columns are now prepended, allow the user to insert at desired positions
+                for i, name in enumerate(instruction_list):
+                    schema_columns.insert(i, name)
+
+                n_mutations = len(instruction_list)
+
+            # if
+        # if
+    # if
 
     # now they should be of equal length
     errors = False
     logger.info(f'Number of schema columns: {len(schema_columns)} vs. supplied headers: {len(header_columns)}')
 
     # if not, examine what's wrong
-    if len(schema_columns) != len(header_columns):
+    if len(schema_columns) != len(header_columns): # + n_mutations:
         errors = True
         logger.error('Number of columns do not match')
 
@@ -500,7 +525,7 @@ def evaluate_headers(data: pd.DataFrame,
 def process_strip_space(data: pd.DataFrame,
                         supplier: str,
                         schema: pd.DataFrame,
-                        meta: pd.DataFrame,
+                        extra: list,
                         strip_space: dict,
                        ):
     mem = psutil.virtual_memory()
@@ -517,7 +542,8 @@ def process_strip_space(data: pd.DataFrame,
     for col in strip_cols:
         if col in data.columns:
             pg_col = dc.change_column_name(col)
-            if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
+            # if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
+            if pg_col not in extra:
                 elapsed = time.time()
                 #data[col] = data[col].replace({"^\s+|\s+$": ""}, regex = True)
                 data[col] = data[col].str.strip()
@@ -675,9 +701,11 @@ def process_data(data: pd.DataFrame,
                  renames: dict,
                  real_types: list,
                  strip_space: dict,
+                 servers: dict,
                 ):
     # set kolomnaam as index
     schema = schema.set_index('kolomnaam')
+    extra_columns = get_bootstrap_data_headers(servers['ODL_SERVER_CONFIG'])
 
     mem = psutil.virtual_memory()
     dc.report_ram('Memory use at process_data')
@@ -691,7 +719,6 @@ def process_data(data: pd.DataFrame,
             data = data,
             supplier = supplier,
             schema = schema,
-            meta = meta,
             select_data = select_data,
         )
 
@@ -708,7 +735,7 @@ def process_data(data: pd.DataFrame,
             data = data,
             supplier = supplier,
             schema = schema,
-            meta = meta,
+            extra = extra_columns,
             strip_space = strip_space,
         )
 
@@ -731,7 +758,7 @@ def process_data(data: pd.DataFrame,
             data = data,
             supplier = supplier,
             schema = schema,
-            meta = meta,
+            extra = extra_columns,
             real_types = real_types,
         )
 
@@ -1007,6 +1034,12 @@ def prepare_one_delivery(cargo: dict,
         )
 
         # Acquire column names
+        delivery_type = dc.get_par(
+            config = cargo,
+            key = 'delivery_type',
+            default = {'mode': 'insert'}
+        )
+
         headers = evaluate_headers(
             data = data,
             supplier_config = cargo,
@@ -1014,6 +1047,7 @@ def prepare_one_delivery(cargo: dict,
             schema = leverancier_schema,
             headers = headers,
             encoding = encoding,
+            delivery_type = delivery_type,
         )
         if headers is not None:
             data.columns = headers
@@ -1031,6 +1065,7 @@ def prepare_one_delivery(cargo: dict,
             renames = rename_copy,
             real_types = real_types,
             strip_space = strip_space,
+            servers = db_servers,
         )
 
         # Save results
@@ -1063,7 +1098,7 @@ def dido_data_prep(header: str):
     dc.display_dido_header(header, config_dict)
 
     delivery_config = dc.read_delivery_config(
-        project_path = config_dict['ROOT_DIR'],
+        project_path = config_dict['PROJECT_DIR'],
         delivery_filename = args.delivery,
     )
 
@@ -1079,7 +1114,7 @@ def dido_data_prep(header: str):
     db_servers = config_dict['SERVER_CONFIGS']
 
     # select which suppliers to process
-    suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
+    suppliers_to_process = dc.get_par(delivery_config, 'SUPPLIERS_TO_PROCESS', '*')
 
     # get real_types
     allowed_datatypes, sub_types = dc.create_data_types()
@@ -1098,7 +1133,6 @@ def dido_data_prep(header: str):
         leverancier, projects = dc.get_supplier_projects(
             config = delivery_config,
             supplier = leverancier_id,
-            # project_name = project_name,
             delivery = leverancier_id,
             keyword = 'DELIVERIES',
         )
@@ -1109,10 +1143,23 @@ def dido_data_prep(header: str):
 
             # get all cargo from the delivery_dict
             cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
-            # cargo_dict = dc.get_cargo(projects, project_key)
+
+            # process only specified deliveries
+            deliveries_to_process = dc.get_par(
+                config = delivery_config,
+                key = 'DELIVERIES_TO_PROCESS',
+                default = '*',
+            )
+            if deliveries_to_process == '*':
+                deliveries_to_process = cargo_dict.keys()
 
             # process all deliveries
             for cargo_name in cargo_dict.keys():
+                if cargo_name not in deliveries_to_process:
+                    logger.info(f'[Delivery {cargo_name} not in '
+                                 'DELIVERIES_TO_PROCESS, skipped]')
+                    continue
+
                 dc.subheader(f'Delivery: {cargo_name}', '.')
 
                 # get cargo associated with the cargo_name
