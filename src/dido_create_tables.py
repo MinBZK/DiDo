@@ -9,9 +9,10 @@ gekopieerd wordt naar de working directory.
 
 Als de schemafiles ok zijn bevonden dan kunnen ze worden verwerkt met dido-create,
 anders moeten de schemafiles in de root directory worden aangepast. Wat in de
-work directrory staat wordt altijd overschreven door dido_begin.
+work directrory staat wordt altijd overschreven door dido_create_tables.
 """
 import os
+import sys
 import time
 import shutil
 import pandas as pd
@@ -20,9 +21,10 @@ from datetime import datetime
 
 # Don't forget to set PYTHONPATH to your python library files
 # export PYTHONPATH=/path/to/dido/helpers/map
-import api_postcode
+# import api_postcode
 import dido_common as dc
 import simple_table as st
+import s3_helper
 
 from dido_common import DiDoError
 from dido_list import dido_list
@@ -35,12 +37,11 @@ from dido_list import dido_list
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
-#######################################################################################################################
+###############################################################################
 #
 # Fase 1 - Read and check the schema files
 #
-#######################################################################################################################
-
+###############################################################################
 
 def fetch_schema_from_table(table_name: str, sql_server_config: dict) -> pd.DataFrame:
     """ fetch a schema from the database
@@ -160,16 +161,16 @@ def apply_schema_odl(template: pd.DataFrame,
     schema = substitute_vars(schema, meta, data_dict, supplier_config)
     schema.columns = [col.strip().lower() for col in schema.columns]
     if template is None:
-        errmsg = f'* Schema "{filename}": de file "bronbestand_attribuut_meta.csv" file ontbreekt. '
-        errmsg += 'ODL generatie kan daar niet zonder.'
+        errmsg = f'*** apply_schema_odl: Schema DataFrame is None. ' \
+                  'ODL generatie kan daar niet zonder.'
         logger.error(errmsg)
 
         raise DiDoError(errmsg)
 
     # check if meta file exists
     if meta is None:
-        errmsg = f'* Schema "{filename}": de file "bronbestand_attribuut_meta.meta.csv" file '
-        errmsg += 'ontbreekt. ODL generatie kan daar niet zonder.'
+        errmsg = f'*** apply_schema_odl: Meta DataFrame is None. ' \
+                  'ontbreekt. ODL generatie kan daar niet zonder.'
         logger.error(errmsg)
 
         raise DiDoError(errmsg)
@@ -205,90 +206,94 @@ def apply_schema_odl(template: pd.DataFrame,
     names_to_skip = ['kolomnaam', 'code_attribuut', 'code_attribuut_sleutel', f'{dc.ODL_CODE_BRONBESTAND}']
 
     # generate codes and keys
-    for row, _ in new_df.iterrows():
+    for idx, _ in new_df.iterrows():
+        col_name = schema.loc[idx, 'kolomnaam']
+
         # if description is lacking, notify the user and flag it
-        beschrijving = schema.loc[row, 'beschrijving'].strip()
+        beschrijving = schema.loc[idx, 'beschrijving'].strip()
         if len(beschrijving) == 0:
-            logger.error(f'* Schema "{filename}, kolom "{row}", beschrijving ontbreekt.')
-            errors = True
+            logger.warning(f'* Schema "{filename}", kolom "{col_name}", beschrijving ontbreekt.')
+            schema.loc[idx, 'beschrijving'] = f'*** ERROR!!! NO DESCRIPTION FOR CULUMN {col_name}***'
 
         # if kolomnaam is omitted copy it from leverancier_kolomnaam
-        if len(schema.loc[row, 'kolomnaam'].strip()) == 0:
-            if len(schema.loc[row, 'leverancier_kolomnaam'].strip()) > 0:
-                schema.loc[row, 'kolomnaam'] = schema.loc[row, 'leverancier_kolomnaam'].strip().lower()
+        if len(schema.loc[idx, 'kolomnaam'].strip()) == 0:
+            if len(schema.loc[idx, 'leverancier_kolomnaam'].strip()) > 0:
+                schema.loc[idx, 'kolomnaam'] = schema.loc[idx, 'leverancier_kolomnaam'].strip().lower()
             else:
                 errors = True
 
         # ensure that kolomnaam is a postgres accepted column name
-        new_name = dc.change_column_name(schema.loc[row, 'kolomnaam'])
+        new_name = dc.change_column_name(schema.loc[idx, 'kolomnaam'])
 
         # when no name could be created, create a random one
         if len(new_name) == 0:
-            logger.error(f'* Schema {filename}, geen kolomnaam in regel {row + 1}')
+            logger.error(f'* Schema {filename}, geen kolomnaam in regel {idx + 1}')
 
         # replace datatypes if necessary and possible
-        dtyp = schema.loc[row, 'datatype'].strip()
+        dtyp = schema.loc[idx, 'datatype'].strip()
         if  len(dtyp) == 0 and \
-            len(schema.loc[row, 'leverancier_kolomtype'].strip()) > 0 and \
+            len(schema.loc[idx, 'leverancier_kolomtype'].strip()) > 0 and \
             data_dict is not None:
-            if schema.loc[row, 'leverancier_kolomtype'].strip() in data_dict.keys():
-                datatype = data_dict[schema.loc[row, 'leverancier_kolomtype'].strip()]
-                schema.loc[row, 'datatype'] = datatype
+
+            sup_type = schema.loc[idx, 'leverancier_kolomtype'].strip()
+            if sup_type in data_dict.keys():
+                datatype = data_dict[sup_type]
+                schema.loc[idx, 'datatype'] = datatype
 
         # if that does not help, flag it
-        datatype = schema.loc[row, 'datatype'].strip().lower()
+        datatype = schema.loc[idx, 'datatype'].strip().lower()
 
         if len(datatype) == 0:
-            schema.loc[row, 'datatype'] = '*NONE*'
+            schema.loc[idx, 'datatype'] = '*NONE*'
 
         # is datatype allowed?
         if datatype not in allowed_datatypes:
-            logger.error(f'* Datatype not allowed: {datatype}')
+            logger.error(f'* Datatype not allowed: {datatype} in column {col_name}')
             errors = True
 
         # assign newly created column name to kolomnaam
-        new_df.loc[row, 'kolomnaam'] = new_name
+        new_df.loc[idx, 'kolomnaam'] = new_name
 
         # create code attribuut
         code_atr = ''
 
         # check if it occurs in data.columns
         if 'code_attribuut' in schema.columns:
-            code_atr = str(schema.loc[row, 'code_attribuut']).strip()
+            code_atr = str(schema.loc[idx, 'code_attribuut']).strip()
 
         # not assign a numeric value?
         if len(code_atr) == 0:
-            code_atr = f'{row + 1:03d}'
+            code_atr = f'{idx + 1:03d}'
 
         # assign to new_df
-        new_df.loc[row, 'code_attribuut'] = code_atr
+        new_df.loc[idx, 'code_attribuut'] = code_atr
 
         # same for code_attribuut_sleutel
         code_atr_key = code_bbs + code_atr
         if 'code_attribuut_sleutel' in schema.columns:
-            code_atr_key = str(schema.loc [row, 'code_attribuut_sleutel']).strip()
+            code_atr_key = str(schema.loc [idx, 'code_attribuut_sleutel']).strip()
 
         if len(code_atr_key) == 0:
             code_atr_key = code_bbs + code_atr
 
-        new_df.loc[row, 'code_attribuut_sleutel'] = code_atr_key
+        new_df.loc[idx, 'code_attribuut_sleutel'] = code_atr_key
 
-        if 'positie' not in schema.columns or (isinstance(schema.loc[row, 'positie'], str) and len(schema.loc[row, 'positie']) == 0):
-            new_df.loc[row, 'positie'] = str(row + 1)
+        if 'positie' not in schema.columns or (isinstance(schema.loc[idx, 'positie'], str) and len(schema.loc[idx, 'positie']) == 0):
+            new_df.loc[idx, 'positie'] = str(idx + 1)
 
         # assign rest of data values
         for col_name in schema.columns:
             if col_name not in names_to_skip:
                 try:
-                    value = schema.loc[row, col_name].strip()
+                    value = schema.loc[idx, col_name].strip()
                 except:
                     value = ''
 
                 if len(value) > 0:
-                    new_df.loc[row, col_name] = value
+                    new_df.loc[idx, col_name] = value
 
             # if
-        # for
+        # fordd_20231117_S_ZBIOJOBT_Functie_teksten.csv
     # for
 
     # some attributes are overruled by meta data
@@ -328,7 +333,6 @@ def apply_meta_odl(meta: pd.DataFrame,
     errors = False
 
     template = dc.load_odl_table(dc.META_TEMPLATE, server_config)
-    # print(template)
 
     # change meta row index values
     meta.index = [dc.change_column_name(i) for i in meta.index.tolist()]
@@ -437,7 +441,75 @@ def create_workdir_structure(config_vars: dict, server_config):
 ### create_workdir_structure ###
 
 
-def create_schema_from_pdirekt_datadict(filename: str, data_dict: dict):
+def get_pdirekt_header_file(header_file: str, root_directory: str, supplier_id: str):
+    """ Looks for datafiles in the root/data directory
+
+    Args:
+        root_directory (str): name of the root directory
+        suppliers (_type_): list of suppliers
+
+    Returns:
+        dict: dictionary for each supplier with data files
+    """
+
+    # check if first character in data_file is a /
+    if header_file.startswith('/'):
+        # absolute path
+        pad, fn, ext = dc.split_filename(data_file)
+        filename = os.path.join(root_directory, fn + ext)
+        shutil.copy2(header_file, filename)
+
+
+    # check id data reside on s3 bucket
+    elif header_file.startswith('s3://'):
+        server = 's3'
+        pad, fn, ext = dc.split_filename(header_file)
+        # server_path = header_file
+        fn = fn + ext
+        filename = os.path.join(root_directory, 'data', supplier_id, fn)
+
+        s3_helper.s3_command_get_file(
+            download_to = filename,
+            filepath_s3 = header_file, # server_path,
+            force_overwrite = True,
+        )
+
+    else:
+        # path relative to root_directory/data
+        pad = os.path.join(root_directory, 'data', supplier_id)
+        filename = data_file
+
+    # if
+
+    # load the header into a dataframe
+    # headers = pd.read_csv(
+    #     filename,
+    #     sep = ';',
+    #     dtype = str,
+    #     keep_default_na = False,
+    #     skiprows = 5,
+    #     engine = 'c',
+    #     encoding = 'utf8',
+    # )
+
+    return filename
+
+### get_pdirekt_header_file ###
+
+
+def create_schema_from_pdirekt_datadict(filename: str,
+                                        root_directory: str,
+                                        supplier_id: str,
+                                        data_dict: dict,
+                                       ):
+
+    # Process the header file
+    filename = get_pdirekt_header_file(
+        header_file = filename,
+        root_directory = root_directory,
+        supplier_id = supplier_id,
+    )
+
     # Read data dictionary into DataFrame
     dd = pd.read_csv(
         filename, # tables[supplier_id]['schema_name'],
@@ -480,16 +552,12 @@ def create_schema_from_pdirekt_datadict(filename: str, data_dict: dict):
 
         # for
     # if
-    # print(dd)
-    # print(df)
-    # df.to_csv('AAA.csv')
 
     # select rows where decimals > 0
     decs = (dd['DECIMALS'].astype('int') > 0)
 
     # set type these rows in df to numeric
     df.loc[decs, 'datatype'] = 'numeric'
-    # print(df)
 
     logger.info('')
 
@@ -548,7 +616,9 @@ def preprocess_data_dict(
         data_dict_specs: str,
         schema_filename: str,
         schema_dir: str,
+        root_directory: str,
         leverancier: pd.DataFrame,
+        leverancier_id: str,
     ):
     schema_source = dc.get_par(data_dict_specs, 'schema_source', '')
     merge_file = dc.get_par(data_dict_specs, 'merge_with', '')
@@ -559,8 +629,19 @@ def preprocess_data_dict(
         column_name = dc.get_par(data_dict_specs, 'column_name', 'Omschrijving')
 
         # load data dictionary and create a valid schema from it
-        data_dict = os.path.join(schema_dir, data_dict_file + '.csv')
-        temp_df = create_schema_from_pdirekt_datadict(data_dict, data_dict_specs)
+        # test if data_dict_file already has a .extension
+        # _, _, ext = dc.split_filename(data_dict_file)
+        # if len(ext) == 0:
+        #     data_dict = os.path.join(schema_dir, data_dict_file + '.csv')
+        # else:
+        #     data_dict = os.path.join(schema_dir, data_dict_file)
+
+        temp_df = create_schema_from_pdirekt_datadict(
+            filename = data_dict_file,
+            root_directory = root_directory,
+            supplier_id = leverancier_id,
+            data_dict = data_dict_specs,
+        )
 
         # if additional info available, merge it with the schema
         if len(merge_file):
@@ -630,7 +711,11 @@ def merge_table_and_schema(table: pd.DataFrame, schema: pd.DataFrame) -> pd.Data
 #######################################################################################################################
 
 
-def write_markdown_doc(outfile: object, supplier_config: dict, columns_to_write: list):
+def write_markdown_doc(project_name: str,
+                       supplier_config: dict,
+                       columns_to_write: list,
+                       doc_filename: str,
+                      ):
     """ Write markdown documentation
 
     Args:
@@ -640,14 +725,17 @@ def write_markdown_doc(outfile: object, supplier_config: dict, columns_to_write:
         columns_to_write (list): columns to add into documentation
     """
     supplier_id = supplier_config['supplier_id']
-    project_name = supplier_config['config']['PROJECT_NAME']
+    # project_name = supplier_config['config']['PROJECT_NAME']
 
     # get the meta and schema dataframe
-    schema = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_SCHEMA]
-    # meta = suppliers[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_SCHEMA]
+    tables = supplier_config[dc.TAG_TABLES]
+    schema = tables[dc.TAG_TABLE_SCHEMA][dc.TAG_SCHEMA]
+    meta_table_name = tables[dc.TAG_TABLE_SCHEMA]["table_root"]
+    meta_root = tables[dc.TAG_TABLE_META]["table_root"]
+    meta_table_name = f'bronbestand_{meta_root}_{dc.TAG_DATA}'
     odl_server_config = supplier_config['config']['SERVER_CONFIGS']['ODL_SERVER_CONFIG']
     odl_meta_data = dc.load_odl_table(
-        table_name = 'bronbestand_bestand_meta_data',
+        table_name = meta_table_name, # 'bronbestand_bestand_meta_data',
         server_config = odl_server_config,
     )
 
@@ -669,162 +757,138 @@ def write_markdown_doc(outfile: object, supplier_config: dict, columns_to_write:
     # get today
     nu = datetime.now().strftime(dc.DATETIME_FORMAT)
 
-    # write name of table or view
-    outfile.write(f"# **Tabel: {supplier_id}: {project_name}**\n\n")
+    with open(doc_filename, encoding="utf8", mode='a') as outfile:
 
-    outfile.write(f'This document was created at {nu}  \n')
-    outfile.write(f'Created by DiDo version: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n')
-    outfile.write(f'With ODL version: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n')
+        # write name of table or view
+        outfile.write(f"# **Tabel: {supplier_id}: {project_name}**\n\n")
 
-    prefix_text_label = f'{dc.TAG_PREFIX}_text'
-    if prefix_text_label in supplier_config.keys() and len(supplier_config[prefix_text_label]) > 0:
-        outfile.write(supplier_config[prefix_text_label] + '\n\n')
+        outfile.write(f'This document was created at {nu}  \n')
+        outfile.write(f'Created by DiDo version: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n')
+        outfile.write(f'With ODL version: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n')
 
-    table_description: str = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['comment']
-    # meta.iloc[0]['bronbestand_beschrijving'].strip()
-    if len(table_description) == 0:
-        table_description = 'DOKUMENTATIE ONTBREEKT!'
+        prefix_text_label = f'{dc.TAG_PREFIX}_text'
+        if prefix_text_label in supplier_config.keys() and len(supplier_config[prefix_text_label]) > 0:
+            outfile.write(supplier_config[prefix_text_label] + '\n\n')
 
-    meta_data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
-    if meta_data is None:
-        logger.info('* no meta data available for %s', supplier_id)
+        table_description: str = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['comment']
+        if len(table_description) == 0:
+            table_description = 'DOKUMENTATIE ONTBREEKT!'
 
-    else:
-        # write meta table header
-        outfile.write('## Meta-informatie\n\n')
-        outfile.write("| Meta attribuut | Waarde \n")
-        outfile.write("| ---------- | ------ |\n")
+        meta_data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
+        if meta_data is None:
+            logger.info('* no meta data available for %s', supplier_id)
 
-        # write meta data
-        for col in meta_data.columns:
-            outfile.write(f'| {col}  | {meta_data.loc[0, col]} |\n')
+        else:
+            # write meta table header
+            outfile.write('## Meta-informatie\n\n')
+            outfile.write("| Meta attribuut | Waarde \n")
+            outfile.write("| ---------- | ------ |\n")
 
-    # Write the table description
-    outfile.write('\n\n## Databeschrijving\n\n')
-    outfile.write(table_description)
-    outfile.write('\n\n')
+            # write meta data
+            for col in meta_data.columns:
+                outfile.write(f'| {col}  | {meta_data.loc[0, col]} |\n')
 
-    # if len(supplier_config[f'{dc.TAG_SUFFIX}_text']) > 0:
-    #     outfile.write(supplier_config[f'{dc.TAG_SUFFIX}_text'] + '\n\n')
+        # Write the table description
+        outfile.write('\n\n## Databeschrijving\n\n')
+        outfile.write(table_description)
+        outfile.write('\n\n')
 
-    # when columns_to_write is empty or '*' write all columns
-    if len(columns_to_write) == 0 or columns_to_write == ['*']:
-        columns_to_write = schema.columns
+        # if len(supplier_config[f'{dc.TAG_SUFFIX}_text']) > 0:
+        #     outfile.write(supplier_config[f'{dc.TAG_SUFFIX}_text'] + '\n\n')
 
-    # write table header
-    underscores = ''
-    for col in columns_to_write:
-        colname = col.replace('_', ' ')
-        colname = colname.capitalize()
+        # when columns_to_write is empty or '*' write all columns
+        if len(columns_to_write) == 0 or columns_to_write == ['*']:
+            columns_to_write = schema.columns
 
-        outfile.write(f' | {colname} ')
-        underscores += ' | ----- '
-
-    # for
-
-    outfile.write(' |\n')
-    outfile.write(f'{underscores} |\n')
-
-    # write table contents, iterate over all rows
-    for index, row in schema.iterrows():
-        outfile.write('| ')
-
-        # iterate over columns
+        # write table header
+        underscores = ''
         for col in columns_to_write:
+            colname = col.replace('_', ' ')
+            colname = colname.capitalize()
 
-            # if column does not exist, write an error message
-            try:
-                cell = str(schema.loc[index, col]).replace('\n', '<br >')
-                cell = cell.replace('\r', '')
+            outfile.write(f' | {colname} ')
+            underscores += ' | ----- '
 
-                outfile.write(cell)
-                outfile.write(' | ')
+        # for
 
-            # Yields an error message for each cell in that column, can be overwhelming
-            except Exception as e:
-                logger.error(f'Error occurred: {e.args[0]}')
-                logger.error(f'No info written for: {col}')
+        outfile.write(' |\n')
+        outfile.write(f'{underscores} |\n')
 
-            # try..except
+        # write table contents, iterate over all rows
+        for index, row in schema.iterrows():
+            outfile.write('| ')
+
+            # iterate over columns
+            for col in columns_to_write:
+
+                # if column does not exist, write an error message
+                try:
+                    cell = str(schema.loc[index, col]).replace('\n', '<br >')
+                    cell = cell.replace('\r', '')
+
+                    outfile.write(cell)
+                    outfile.write(' | ')
+
+                # Yields an error message for each cell in that column, can be overwhelming
+                except Exception as e:
+                    logger.error(f'Error occurred: {e.args[0]}')
+                    logger.error(f'No info written for: {col}')
+
+                # try..except
+
+            # for
+
+            outfile.write('\n')
 
         # for
 
         outfile.write('\n')
 
-    # for
+        # Write the data when present (not None)
+        if data is not None:
+            outfile.write('\n\n')
+            outfile.write('## Data\n\n')
 
-    outfile.write('\n')
-
-    # Write the data when present (not None)
-    if data is not None:
-        outfile.write('\n\n')
-        outfile.write('## Data\n\n')
-
-        for col in data.columns:
-            outfile.write(f' | {col} ')
-
-        outfile.write(' | \n')
-
-        for col in data.columns:
-            outfile.write(' | ------- ')
-
-        outfile.write('| \n')
-
-        for idx, row in data.iterrows():
             for col in data.columns:
-                outfile.write(f' | {data.loc[idx, col] }')
+                outfile.write(f' | {col} ')
 
             outfile.write(' | \n')
 
+            for col in data.columns:
+                outfile.write(' | ------- ')
+
+            outfile.write('| \n')
+
+            for idx, row in data.iterrows():
+                for col in data.columns:
+                    outfile.write(f' | {data.loc[idx, col] }')
+
+                outfile.write(' | \n')
+
+            outfile.write('\n')
+
         outfile.write('\n')
 
-    outfile.write('\n')
+        # check if additional markdown exists
+        suffix_text_label = f'{dc.TAG_SUFFIX}_text'
+        if suffix_text_label in supplier_config.keys() and len(supplier_config[suffix_text_label]) > 0:
+            outfile.write('\n\n' + supplier_config[suffix_text_label] + '\n\n')
 
-    # check if additional markdown exists
-    suffix_text_label = f'{dc.TAG_SUFFIX}_text'
-    if suffix_text_label in supplier_config.keys() and len(supplier_config[suffix_text_label]) > 0:
-        outfile.write('\n\n' + supplier_config[suffix_text_label] + '\n\n')
-
+    # with_meta_data (
 
     return
 
 ### write_markdown_doc ###
 
-'''
-def write_documentation(filename: str, suppliers: dict, columns_to_write: list):
-    """ The documentation is written in markdown format with a __TOC__
-    header for the Gitlab wiki.
 
-    Args:
-        filename (str): file to write documentation to
-        suppliers (dict): dictionary of suppliers
-        columns_to_write (list): list of columns to write into documentation
-    """
-
-    logger.info('')
-    logger.info('[Writing documentatiom]')
-    with open(filename, encoding="utf8", mode='w') as outfile:
-        outfile.write('[[_TOC_]]\n\n')
-        for supplier in suppliers:
-            logger.info(f'>> Documenting {supplier}')
-
-            # create and write documentation
-            dc.write_markdown_doc(outfile, suppliers, supplier, columns_to_write)
-
-    logger.info('')
-    logger.info(f'=== Documentation written to {filename}')
-
-    return
-
-### write_documentation ###
-'''
-
-def write_sql(project_name: str,
-              outfile: object,
+def write_sql(meta_data: pd.DataFrame,
               supplier_config: dict,
-              template: pd.DataFrame,
+              supplier_id: str,
+              project_config: dict,
+              project_name: str,
+              overwrite: bool,
               servers: dict,
-              #server_config: dict,
+              sql_filename: str,
              ):
     """ Iterate over all elements in table and creates a data description
 
@@ -839,113 +903,121 @@ def write_sql(project_name: str,
     """
     postgres_schema = servers['DATA_SERVER_CONFIG']['POSTGRES_SCHEMA']
 
-    #show_supplier_schemas(suppliers)
-    supplier_id = supplier_config['supplier_id']
     logger.info('')
     logger.info('[Writing SQL]')
     logger.info(f'>> Writing {supplier_id}')
 
-    # get the meta data, they are needed for saome operations
-    meta_data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['data']
-    for table_type in supplier_config[dc.TAG_TABLES]:
+    with open(sql_filename, encoding="utf8", mode='a') as outfile:
 
-        # get schema file
-        schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
-        data = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_DATA]
+        # get the meta data, they are needed for saome operations
+        for table_type in supplier_config[dc.TAG_TABLES]:
 
-        # id data is not a dataframe, there is no data at all
-        if not isinstance(data, pd.DataFrame):
-            data = None
+            # get schema file
+            schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_SCHEMA]
 
-        # define the prototypical table name
-        table_name = dc.get_table_name(project_name, supplier_id, table_type, '')
+            # schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
+            data = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_DATA]
 
-        # create SQL for the description table
-        if supplier_config[dc.TAG_TABLES][table_type]['create_description']:
-            description_tag = table_name + 'description'
-            sql_code = create_table_description(
-                supplier_config = supplier_config,
-                table_type = table_type,
-                template = template,
-                schema_name = postgres_schema,
-                table_name = description_tag,
-            )
+            # id data is not a dataframe, there is no data at all
+            if not isinstance(data, pd.DataFrame):
+                data = None
 
-            # define the data for the description
-            sql_data = create_table_input(schema, schema,
-                                            '',
-                                            postgres_schema,
-                                            description_tag)
-            sql_code += sql_data
+            # define the prototypical table name
+            table_name = dc.get_table_name(project_name, supplier_id, table_type, '')
 
-        # create the data table if create_data is True
-        if supplier_config[dc.TAG_TABLES][table_type]['create_data']:
+            # create SQL for the description table
+            if supplier_config[dc.TAG_TABLES][table_type]['create_description']:
+                description_tag = table_name + dc.TAG_DESC
+                sql_code = create_table_description(
+                    supplier_config = supplier_config,
+                    table_type = table_type,
+                    template = meta_data,
+                    schema_name = postgres_schema,
+                    table_name = description_tag,
+                    overwrite = overwrite,
+                )
 
-            data_table_tag = table_name + dc.TAG_DATA
-            schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
+                # define the data for the description
+                sql_data = create_table_input(schema, schema,
+                                                '',
+                                                postgres_schema,
+                                                description_tag)
+                sql_code += sql_data
 
-            # when meta, write the meta contents to the data table
-            data = None
-            if table_type == dc.TAG_TABLE_META:
-                data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
+            # create the data table if create_data is True
+            if supplier_config[dc.TAG_TABLES][table_type]['create_data']:
 
-            # when origin is omitted in config.yaml, supply the default (input: <file>)
-            if 'origin' in supplier_config:
-                origin = supplier_config['origin']
+                data_table_tag = table_name + dc.TAG_DATA
+                # schema = supplier_config[dc.TAG_TABLES]['schema'][dc.TAG_TABLE_SCHEMA] = schema
 
-            else:
-                origin = {'input': '<file>'}
+                # when meta, write the meta contents to the data table
+                data = None
+                if table_type == dc.TAG_TABLE_META:
+                    data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
 
-            if origin['input'] == '<table>' and table_type == dc.TAG_TABLE_SCHEMA:
-                logger.info(f'  > Creating description for table schema: {data_table_tag}')
-                if not 'table_name' in origin or origin['table_name'] == '':
-                    msg = 'No "table_name" was specified for origin in config.yaml'
-                    raise DiDoError(msg)
+                # when origin is omitted in config.yaml, supply the default (input: <file>)
+                if 'origin' in supplier_config:
+                    origin = supplier_config['origin']
 
-                if not 'code_bronbestand' in origin or origin['code_bronbestand'] == '':
-                    origin['code_bronbestand'] = meta_data.iloc[-1].loc['code_bronbestand']
+                else:
+                    origin = {'input': '<file>'}
 
-                if not 'levering_rapportageperiode' in origin or origin['levering_rapportageperiode'] == '':
-                    olp = meta_data.iloc[-1].loc['bronbestand_datum_begin'][:4] + '-I'
-                    origin['levering_rapportageperiode'] = olp
-                    logger.warning(f'!Geen "levering rapportageperiode" in origin/config.yaml. {olp} verondersteld.')
+                if origin['input'] == '<table>' and table_type == dc.TAG_TABLE_SCHEMA:
+                    logger.info(f'  > Creating description for table schema: {data_table_tag}')
+                    if 'table_name' not in origin or origin['table_name'] == '':
+                        msg = 'No "table_name" was specified for origin in config.yaml'
+                        raise DiDoError(msg)
 
-                servers['FOREIGN_SERVER_CONFIG']['table'] = origin['table_name']
-                servers['DATA_SERVER_CONFIG']['table'] = data_table_tag
+                    if 'code_bronbestand' not in origin or origin['code_bronbestand'] == '':
+                        origin['code_bronbestand'] = meta_data.iloc[-1].loc['code_bronbestand']
 
-                logger.info(f'Schema:\n{schema}')
+                    if 'levering_rapportageperiode' not in origin or origin['levering_rapportageperiode'] == '':
+                        olp = meta_data.iloc[-1].loc['bronbestand_datum_begin'][:4] + '-I'
+                        origin['levering_rapportageperiode'] = olp
+                        logger.warning(f'!Geen "levering rapportageperiode" in origin/config.yaml. {olp} verondersteld.')
 
-                sql_code += use_existing_table(origin,
-                                                schema,
-                                                servers['FOREIGN_SERVER_CONFIG'],
-                                                servers['DATA_SERVER_CONFIG'],
-                                                servers['ODL_SERVER_CONFIG'],
-                                                )
-                logger.info(f'  <table> {data_table_tag}')
+                    servers['FOREIGN_SERVER_CONFIG']['table'] = origin['table_name']
+                    servers['DATA_SERVER_CONFIG']['table'] = data_table_tag
 
-            else:
-                sql_code += create_table(schema,
-                                            data,
-                                            data_table_tag,
-                                            servers['DATA_SERVER_CONFIG'],
-                                            supplier_config,
-                                        )
+                    logger.info(f'Schema:\n{schema}')
 
-                logger.info(f'  <file> {data_table_tag} (default)')
+                    sql_code += use_existing_table(
+                        origin = origin,
+                        schema = schema,
+                        server_from = servers['FOREIGN_SERVER_CONFIG'],
+                        server_to = servers['DATA_SERVER_CONFIG'],
+                        odl_server = servers['ODL_SERVER_CONFIG'],
+                    )
+                    logger.info(f'  <table> {data_table_tag}')
 
+                else:
+                    sql_code += create_table(
+                        schema = schema,
+                        data = data,
+                        table_name = data_table_tag,
+                        project_name = project_name,
+                        overwrite = overwrite,
+                        server_config = servers['DATA_SERVER_CONFIG'],
+                        supplier_config = supplier_config,
+                    )
+
+                    logger.info(f'  <file> {data_table_tag} (default)')
+
+                    # if
                 # if
-            # if
 
-        outfile.write(sql_code)
-        outfile.write('\n\n')
-    # for
+            outfile.write(sql_code)
+            outfile.write('\n\n')
+        # for -- tables
+    # with
 
     return
 
 ### write_sql ###
 
 
-def test_for_existing_tables(project_name: str,
+def test_for_existing_tables(supplier_id: str,
+                             project_name: str,
                              supplier_config: dict,
                              sql_server_config: dict,
                             ):
@@ -960,7 +1032,7 @@ def test_for_existing_tables(project_name: str,
 
     results = {}
     any_present = False
-    supplier_id = supplier_config['supplier_id']
+    # supplier_id = supplier_config['supplier_id']
 
     # for supplier in supplier_config:
     logger.info(f'[Creating {supplier_id}]')
@@ -987,7 +1059,8 @@ def create_table_description(supplier_config: dict,
                              table_type: str,
                              template: pd.DataFrame,
                              schema_name: str,
-                             table_name: str
+                             table_name: str,
+                             overwrite: bool,
                              ) -> str:
     """ Generates the description of a table in SQL format
 
@@ -1003,7 +1076,7 @@ def create_table_description(supplier_config: dict,
     """
 
     supplier_id = supplier_config['supplier_id']
-    logger.info(f"===> {supplier_id} - {table_type}")
+    logger.info(f" > {supplier_id} - {table_type}")
 
     data_types = ''
     line = ''
@@ -1047,8 +1120,11 @@ def create_table_description(supplier_config: dict,
     data_types = data_types[:-2]
 
     # create a table definition
-    # tbd = f'DROP TABLE IF EXISTS {schema_name}.{table_name} CASCADE;\n\n'
-    tbd = f'CREATE TABLE {schema_name}.{table_name}\n(\n'
+    tbd = ''
+    if overwrite:
+        tbd += f'DROP TABLE IF EXISTS {schema_name}.{table_name} CASCADE;\n\n'
+
+    tbd += f'CREATE TABLE {schema_name}.{table_name}\n(\n'
     tbd += data_types + '\n);\n\n'
     tbd += table_comment + comments + '\n\n'
     #tbd += data_sql
@@ -1120,6 +1196,7 @@ def create_table_input(data: pd.DataFrame = None,
 def create_index(schema: pd.DataFrame,
                  data: pd.DataFrame,
                  table_name: str,
+                 overwrite: bool,
                  server_config: dict,
                  supplier_config: dict,
                  ) -> str:
@@ -1159,6 +1236,9 @@ def create_index(schema: pd.DataFrame,
     pg_schema = server_config['POSTGRES_SCHEMA']
     sql = ''
     for index_name in index_dict.keys():
+        if overwrite:
+            sql += f'DROP INDEX IF EXISTS {index_name} CASCADE;'
+
         sql += f"CREATE INDEX {index_name} ON {pg_schema}.{table_name}\n(\n"
         for i in range(len(index_dict[index_name]['columns'])):
             col = index_dict[index_name]['columns'][i]
@@ -1207,9 +1287,11 @@ def create_primary_key(schema: pd.DataFrame,
 def create_table(schema: pd.DataFrame,
                  data: pd.DataFrame,
                  table_name: str,
+                 project_name: str,
+                 overwrite: bool,
                  server_config: dict,
                  supplier_config: dict,
-                 ) -> str:
+                ) -> str:
     """ Create a table in the database and fill with data
 
     Args:
@@ -1231,13 +1313,15 @@ def create_table(schema: pd.DataFrame,
 
     # create variable names and types based on schema
     for idx, row in schema.iterrows():
+
         line = f'   {row["kolomnaam"]} {row["datatype"]}'
         if len(row['constraints']) > 0:
             line += ' ' + row['constraints']
 
         data_types += line + ',\n'
 
-        comment = f"COMMENT ON COLUMN {schema_name}.{table_name}.{row['kolomnaam']} IS "
+        comment = f"COMMENT ON COLUMN {schema_name}.{table_name}." \
+                  f"{row['kolomnaam']} IS "
         description = schema.loc[idx, 'beschrijving'].strip()
 
         if len(description) == 0:
@@ -1246,30 +1330,58 @@ def create_table(schema: pd.DataFrame,
         comment += f"$${description}$$;\n"
         comments += comment
 
-    names = dc.get_table_names(supplier_config['config']['PROJECT_NAME'], supplier_config['supplier_id'])
+    # for
+
+    names = dc.get_table_names(
+        project_name = project_name,
+        supplier = supplier_config['supplier_id'],
+    )
 
     # add primary key when defined
-    if 'primary_key' in supplier_config and table_name == names[dc.TAG_TABLE_SCHEMA]:
+    if 'primary_key' in supplier_config \
+        and table_name == names[dc.TAG_TABLE_SCHEMA]:
+
         primary_key = create_primary_key(schema, supplier_config)
         data_types += primary_key + ', '
 
-    # remove last comma and newline
+    # remove last comma and space
     data_types = data_types[:-2]
 
     # create a table definition and instruction to read starttabel.csv
-    #tbd = f'DROP TABLE IF EXISTS {schema_name}.{table_name} CASCADE;\n\n'
-    tbd = f'CREATE TABLE {schema_name}.{table_name}\n(\n'
+    tbd = ''
+    if overwrite:
+        tbd += f'DROP TABLE IF EXISTS {schema_name}.{table_name} CASCADE;\n\n'
+
+    tbd += f'CREATE TABLE {schema_name}.{table_name}\n(\n'
     tbd += data_types + '\n);\n\n'
     tbd += table_comment + comments + '\n\n'
 
     # look if a primary key has to be added to the data file
-    if 'index' in supplier_config and table_name == names[dc.TAG_TABLE_SCHEMA]:
-        sql_index = create_index(schema, data, table_name, server_config, supplier_config)
+    if 'index' in supplier_config \
+        and table_name == names[dc.TAG_TABLE_SCHEMA]:
+
+        sql_index = create_index(
+            schema = schema,
+            data = data,
+            table_name = table_name,
+            overwrite = overwrite,
+            server_config = server_config,
+            supplier_config = supplier_config,
+        )
         if len(sql_index) > 0:
             tbd += sql_index
 
+    # if
+
     if data is not None:
-        tbd += create_table_input(data, schema, '', schema_name, table_name)
+        tbd += create_table_input(
+            data = data,
+            schema = schema,
+            filename = '',
+            schema_name = schema_name,
+            table_name = table_name,
+        )
+    # if
 
     logger.debug(tbd)
 
@@ -1278,10 +1390,15 @@ def create_table(schema: pd.DataFrame,
 ### create_table ###
 
 
-def use_existing_table(origin: dict, schema: pd.DataFrame, server_from: dict, server_to: dict, odl_server: dict):
+def use_existing_table(origin: dict,
+                       schema: pd.DataFrame,
+                       server_from: dict,
+                       server_to: dict,
+                       odl_server: dict
+                      ):
     """ Creates a DiDo data table from an existing table
 
-    This is a somwhat elaborate process
+    This is a somewhat elaborate process
     - create new table
     - create the bootstrap columns
     - create the columns of the table to be copied
@@ -1344,47 +1461,20 @@ def use_existing_table(origin: dict, schema: pd.DataFrame, server_from: dict, se
 
     schema = schema.reset_index()
 
-    # # now copy the data from the old table to the new table, see template below
-    # # insert into tablename (columns) select columns from oldtable;
-    # select_columns = select_columns[:-2]
-
-    # insert = f"INSERT INTO {table_to_name} "\
-    #          f"({select_columns})\n   SELECT {select_columns}\n" \
-    #          f"   FROM {server_from['POSTGRES_SCHEMA']}.{server_from['table']};\n"
-
     sql = sql[:-2] + '\n);\n\n' + comments + '\n' # + insert
 
     # The part of cpying the data is moved to dido_import
 
-#     # copy the data for the bootstrap columns
-
-#     # update bronbestand_recordnummer
-#     data += f"""
-# DROP SEQUENCE IF EXISTS seq;
-
-# CREATE SEQUENCE seq
-#     START 1
-#     INCREMENT 1;
-
-# UPDATE {table_to_name} SET bronbestand_recordnummer = nextval('seq');
-# """
-
-#     # update code_bronbestand
-#     data += f"UPDATE {table_to_name} " \
-#             f"SET code_bronbestand = \'{origin['code_bronbestand']}\';\n"
-
-#     # fetch levering_rapportageperiode from origin
-#     data += f"UPDATE {table_to_name} " \
-#             f"SET levering_rapportageperiode = \'{origin['levering_rapportageperiode']}\';\n"
-
-#     # set sysdatum at current year
-#     data += f"UPDATE {table_to_name} " \
-#             f"SET sysdatum = CURRENT_DATE;\n"
-
     return sql # + data
 
 
-def load_supplier_schemas(supplier_config: dict, root: str, work: str) -> dict:
+def load_supplier_schemas(supplier_config: dict,
+                          supplier_id: str,
+                          projects: dict,
+                          project_id: str,
+                          root: str,
+                          work: str
+                         ) -> dict:
     """load data and meta schemas from file and add to suppliers info
 
     Args:
@@ -1399,55 +1489,46 @@ def load_supplier_schemas(supplier_config: dict, root: str, work: str) -> dict:
         updated suppliers dictionary
     """
     tables: dict = {}
+    tables[supplier_id] = {}
 
     logger.info('')
     logger.info('[Loading supplier schemas])')
 
     # for supplier in supplier_config.keys():
-    supplier_id = supplier_config['supplier_id']
-    logger.info(f'=== {supplier_id} ===')
+    # supplier_id = supplier_config['supplier_id']
+    dc.subheader(f'Supplier: {supplier_id}', '=')
     schema_work = os.path.join(work, 'schemas', supplier_id)
     doc_root = os.path.join(root, 'docs', supplier_id)
 
-    # get the schema files
-    files = [f for f in os.listdir(schema_work) if os.path.isfile(os.path.join(schema_work, f))]
+    # read the schema description schema
+    schema_file = projects[project_id]['schema_file'] + '.schema.csv'
+    tables[supplier_id]['schema_name'] = os.path.join(work, 'schemas', supplier_id, schema_file)
+    df = pd.read_csv(
+        tables[supplier_id]['schema_name'],
+        sep = ';',
+        dtype = str,
+        keep_default_na = False,
+        na_values = []
+    ).fillna('')
 
-    # setup the schemas dictionary by interpreting the read files.
-    # Each files has the following format
-    # filename.index.csv, index one of [description, meta, data]
-    tables[supplier_id] = {}
-
-    for filename in files:
-        parts = filename.split('.') # parts being name, index, 'csv'
-        # check that extension is .csv and there are exactly 3 parts
-        if parts[-1] == 'csv' and len(parts) == 3:
-
-            # index is supplied by the scond part
-            index = parts[-2]
-            if len(parts) == 3:
-                table_idx = f'{index}_name'
-                tables[supplier_id][table_idx] = os.path.join(work, 'schemas', supplier_id, filename)
-
-        else:
-            errmsg = f' Wrong format of filename: should be name. '
-            errmsg += '[description|meta|data].csv'
-            raise DiDoError(errmsg)
-
-    # read the data description schema
-    df = pd.read_csv(tables[supplier_id]['schema_name'],
-                        sep = ';',
-                        dtype = str,
-                        keep_default_na = False,
-                        na_values = []).fillna('')
     supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_SCHEMA] = df
 
     # meta information is a bit weird. The input data is kind of user friendly key-value store
     # it is stored in the metadata tag and in a later phase will be merged from the
     # metadata description file fetched from ODL
-    meta = pd.read_csv(tables[supplier_id]['meta_name'],
-                        sep = ';',
-                        dtype = str,
-                        keep_default_na = False).fillna('')
+    meta_file = projects[project_id]['schema_file'] + '.meta.csv'
+    tables[supplier_id]['meta_name'] = os.path.join(work, 'schemas', supplier_id, meta_file)
+    meta = pd.read_csv(
+        tables[supplier_id]['meta_name'],
+        sep = ';',
+        dtype = str,
+        keep_default_na = False
+    ).fillna('')
+
+    # strip all spaces left and right
+    for idx in meta.index:
+        meta.loc[idx, 'waarde'] = meta.loc[idx, 'waarde'].strip()
+
     meta = meta.set_index(meta.columns[0])
     supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_SCHEMA] = '<odl>'
     supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA] = meta
@@ -1460,7 +1541,7 @@ def load_supplier_schemas(supplier_config: dict, root: str, work: str) -> dict:
             sep = ';',
             dtype = str,
             keep_default_na = False
-           ).fillna('')
+        ).fillna('')
 
     return supplier_config
 
@@ -1496,7 +1577,7 @@ def merge_meta_data_with_description(desc: pd.DataFrame, metadata: pd.DataFrame)
 def merge_meta_data_with_odl_data(config: dict, metadata: pd.DataFrame, metadata_data: pd.DataFrame):
     """ Assigns default values tot metadata from ODL
 
-    The ODL metadata table contains meta data fro general use, especially
+    The ODL metadata table contains meta data for general use, especially
      version information. When a cell in metadata is empty it is assigned
      its default value from ODL (metadata_data)
 
@@ -1572,25 +1653,32 @@ def load_supplier_odl(supplier_config: dict, project_name: str, server_config: d
         logger.info(f'>> Doing table: {key}')
         table_info = supplier_config[dc.TAG_TABLES][key]
         table_root = table_info['table_root']
-        odl_name = f'bronbestand_{table_root}_description'
-        table_name = dc.get_table_name(project_name, supplier_id, table_root, 'description')
-
+        new_table_name = dc.get_table_name(
+            project_name = project_name,
+            supplier = supplier_id,
+            table_info = table_root,
+            postfix = dc.TAG_DESC,
+        )
 
         # create the table name
-        odl_name = 'bronbestand_' + table_root + '_description'
+        odl_name = f'bronbestand_{table_root}_{dc.TAG_DESC}'
 
         # if schema is <odl>, fetch the schema from ODL
-        if isinstance(table_info[dc.TAG_SCHEMA], str) and table_info[dc.TAG_SCHEMA] == '<odl>':
+        if isinstance(table_info[dc.TAG_SCHEMA], str) \
+            and table_info[dc.TAG_SCHEMA] == '<odl>':
+
             # fetch the table from the database and assign as dataframe to schema
             table_info[dc.TAG_SCHEMA] = dc.load_odl_table(odl_name, server_config)
 
             # change table name as table of this project and this supplier
-            table_info['table_name'] = table_name
+            table_info['table_name'] = new_table_name
 
         # if data is <odl>, fetch the data from ODL
-        if isinstance(table_info[dc.TAG_SCHEMA], str) and table_info[dc.TAG_DATA] == '<odl>':
+        if isinstance(table_info[dc.TAG_SCHEMA], str) \
+            and table_info[dc.TAG_DATA] == '<odl>':
+
             # create the table name
-            odl_name = 'bronbestand_' + table_root + '_data'
+            odl_name = f'bronbestand_{table_root}_{dc.TAG_DATA}'
 
             # fetch the table from the database and assign as dataframe to schema
             table_info[dc.TAG_DATA] = dc.load_odl_table(odl_name, server_config)
@@ -1601,7 +1689,9 @@ def load_supplier_odl(supplier_config: dict, project_name: str, server_config: d
 
         if key == dc.TAG_TABLE_META:
             # merge the metadata into the dataframe
-            metadata_data = dc.load_odl_table("bronbestand_bestand_meta_data", server_config)
+            # x = table_info['table_root']
+            meta_name = f'bronbestand_{table_root}_{dc.TAG_DATA}'
+            metadata_data = dc.load_odl_table(meta_name, server_config)
             df = merge_meta_data_with_description(table_info[dc.TAG_SCHEMA], table_info[dc.TAG_DATA])
             df = merge_meta_data_with_odl_data(supplier_config, df, metadata_data)
 
@@ -1662,27 +1752,32 @@ def show_supplier_schemas(suppliers: dict):
                         logger.info(f'    {table_key}: *{str(type(suppliers[supplier][prop]))}*')
 
             else:
-                logger.info(f'  {prop}: { suppliers[supplier][prop]}')
+                try:
+                    logger.info(f'  {prop}: { suppliers[supplier][prop]}')
+
+                except:
+                    logger.info(f'  {prop}: { suppliers[supplier]}')
+
+                # try..except
+            # if
+        # for
+    # for
 
     return
+
+### show_supplier_schemas ###
 
 
 def dido_begin(config_dict: dict):
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
     odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    data_server_config = db_servers['DATA_SERVER_CONFIG']
     foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
-    use_of_batches = False
 
     # get data types
     data_types = dc.create_data_types()
@@ -1705,36 +1800,26 @@ def dido_begin(config_dict: dict):
 
     # process each supplier
     for leverancier_id in suppliers_to_process:
-        logger.info('')
-        logger.info(f'=== {leverancier_id} ===')
+        dc.subheader(f'Supplier {leverancier_id}', '=')
 
-        leverancier, projects = dc.get_supplier_projects(config_dict, leverancier_id, 1)
+        leverancier, projects = dc.get_supplier_projects(
+            config = config_dict,
+            supplier = leverancier_id,
+            delivery = 1,
+            keyword = 'SUPPLIERS',
+        )
 
         for project_key in projects:
-            logger.info(f'--- {project_key} ---')
+            dc.subheader(f'Project {project_key}', '-')
             project = projects[project_key]
 
-            # directories
-            # direcory to load files from root_dir
+            # directory to load files from root_dir
             dir_load = os.path.join(root_dir, 'schemas', leverancier_id)
 
             # directory to save into work_dir
             dir_save = os.path.join(work_dir, 'schemas', leverancier_id)
 
-            # when using batch, fetch source_file and data_dict from batch
-            data_dict = ''
-            if use_of_batches:
-                current_batch = leverancier['batch']['projects'][project]
-                source_file = dc.get_par(current_batch, 'schema_file', '')
-                data_dict = dc.get_par(current_batch, 'data_dict', '')
-
-            else:
-                source_file = leverancier['schema_file']
-                data_dict = dc.get_par(leverancier, 'data_dictionary', {})
-                if len(data_dict) > 0:
-                    preprocess_data_dict(data_dict, fname_schema_load, dir_load, leverancier)
-
-            # files
+            source_file = project['schema_file']
             fname_schema_load = os.path.join(dir_load, source_file + '.schema.csv')
             fname_meta_load = os.path.join(dir_load, source_file + '.meta.csv')
             fname_data_load = os.path.join(dir_load, source_file + '.data.csv')
@@ -1752,9 +1837,16 @@ def dido_begin(config_dict: dict):
             For p-direct the function create_schema_from_pdirekt_datadict is provided.
             The function preprocess_data_dict prepocesses a data dictionary when present.
             """
-            # data_dict = dc.get_par(leverancier, 'data_dictionary', {})
+            data_dict = dc.get_par(project, 'data_dictionary', {})
             if len(data_dict) > 0:
-                preprocess_data_dict(data_dict, fname_schema_load, dir_load, leverancier)
+                preprocess_data_dict(
+                    data_dict_specs = data_dict,
+                    schema_filename = fname_schema_load,
+                    schema_dir = dir_load,
+                    root_directory = root_dir,
+                    leverancier = leverancier,
+                    leverancier_id = leverancier_id,
+                )
 
             # load templates from database
             schema_template = dc.load_odl_table(dc.SCHEMA_TEMPLATE, odl_server_config)
@@ -1768,20 +1860,23 @@ def dido_begin(config_dict: dict):
             logger.debug(f'[Input schema file: {fname_schema_load}]')
             schema_leverancier = pd.read_csv(
                 fname_schema_load,
-                sep = ';', # r'\s*;\s*', # warning regular expression seps tend to ignore quoted data
+                sep = ';', # r'\s*;\s*', # warning regex seps ignore quoted data
                 dtype = str,
                 keep_default_na = False,
                 engine = 'python',
             ).fillna('')
 
             """
-            Origin is an option that indicates the origin of the data. The options are:
+            Origin is an option that indicates the origin of the data.
             <file>  - the data are delivered by file
-            <table> - the data are delived by a postgres table, only valid for initialization
-            <api>   - data are delived via an internet api, one time initialization and frequent updates
-                    when this option is specified, the connection is tested
+            <table> - the data are delived by a postgres table,
+                      only valid for initialization
+            <api>   - data are delived via an internet api,
+                      one time initialization and frequent updates
+                      when this option is specified, the connection is tested
 
-            Only <table> impacts dido_begin, all three impact dido_data_prep and dido_import
+            Only <table> impacts dido_begin, all three impact
+            dido_data_prep and dido_import
             """
 
             # fetch origin from config when present, else default to <file>
@@ -1798,17 +1893,34 @@ def dido_begin(config_dict: dict):
                 # fetch schema  from table
                 table_name = origin['table_name']
                 logger.debug(f'[Input schema table: {table_name}]')
-                table_leverancier = fetch_schema_from_table(table_name, foreign_server_config)
-                schema_leverancier = merge_table_and_schema(table_leverancier, schema_leverancier)
-                logger.info(f'Origin is <table>, from {table_name}')
+                table_leverancier = fetch_schema_from_table(
+                    table_name = table_name,
+                    sql_server_config = foreign_server_config,
+                )
+                schema_leverancier = merge_table_and_schema(
+                    table = table_leverancier,
+                    schema = schema_leverancier,
+                )
+                logger.info(f'Origin is <tabprintle>, from {table_name}')
 
             else:
-                raise DiDoError(f'*** Unknown origin input: { origin["input"]}. Only <file>, <table> or <api> allowed.')
-
+                raise DiDoError(f'*** Unknown origin input: { origin["input"]}. '
+                                'Only <file>, <table> or <api> allowed.')
 
             logger.debug(schema_leverancier)
-            schema_leverancier = merge_bootstrap_data(schema_leverancier, dc.EXTRA_TEMPLATE, odl_server_config)
-            meta_leverancier = pd.read_csv(fname_meta_load, sep=';', dtype=str, keep_default_na=False)
+            schema_leverancier = merge_bootstrap_data(
+                schema = schema_leverancier,
+                table_name = dc.EXTRA_TEMPLATE,
+                server_config = odl_server_config,
+            )
+
+            meta_leverancier = pd.read_csv(
+                fname_meta_load,
+                sep = ';',
+                dtype = str,
+                keep_default_na = False,
+            )
+
             meta_leverancier = meta_leverancier.fillna('').set_index('attribuut')
 
             # load the data from the parameters table
@@ -1841,13 +1953,8 @@ def dido_begin(config_dict: dict):
             )
             meta_leverancier.to_csv(fname_meta_save, sep=';', index=True)
 
-            # if data file exists, load and store it
-            if os.path.exists(fname_data_load):
-                logger.info('[Copying data file]')
-                shutil.copy2(fname_data_load, fname_data_save)
-            # if
-        # for
-    # for
+        # for -- project
+    # for -- supplier
 
     return
 
@@ -1864,21 +1971,33 @@ def dido_create(config_dict: dict):
     db_servers = config_dict['SERVER_CONFIGS']
     odl_server_config = db_servers['ODL_SERVER_CONFIG']
     data_server_config = db_servers['DATA_SERVER_CONFIG']
-    foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
-    table_desc = config_dict['TABLES']
+    table_desc = config_dict['PARAMETERS']['TABLES']
     write_columns = config_dict['COLUMNS']
+    overwrite_tables = dc.get_par(config_dict, 'KILL_EXISTING_TABLES', False)
+
+    # file names
+    sql_filename = os.path.join(work_dir, 'sql', 'create-tables.sql')
+    doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
+
+    # write initial code to sqlfile, write_sql opens file in append mode
+    with open(sql_filename, encoding="utf8", mode='w') as sqlfile:
+        # create a transaction of tables creation
+        sqlfile.write('-- Quit immediately with exit code other '
+                      'than 0 when an error occurs\n')
+        sqlfile.write('\\set ON_ERROR_STOP true\n\n')
+        sqlfile.write('BEGIN; -- Transaction\n\n')
 
     # select which suppliers to process
-    suppliers_to_process = suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
+    suppliers_to_process = suppliers_to_process = dc.get_par(
+        config = config_dict,
+        key = 'SUPPLIERS_TO_PROCESS',
+        default = '*',
+    )
 
     # just * means process all
     if suppliers_to_process == '*':
@@ -1888,77 +2007,130 @@ def dido_create(config_dict: dict):
     doc_filename = os.path.join(work_dir, 'docs', 'create-docs.md')
     any_present = False
 
-    with open(sql_filename, encoding="utf8", mode='w') as sqlfile:
-        # create a transaction of tables creation
-        sqlfile.write('-- Quit immediately with exit code other than 0 when an error occurs\n')
-        sqlfile.write('\\set ON_ERROR_STOP true\n\n')
-        sqlfile.write('BEGIN; -- Transaction\n\n')
+    # create documentation file and write TOC header
+    with open(doc_filename, encoding="utf8", mode='w') as docfile:
+        docfile.write('[[_TOC_]]\n\n')
 
-        # create documentation file and write TOC header
-        with open(doc_filename, encoding="utf8", mode='w') as docfile:
-            docfile.write('[[_TOC_]]\n\n')
+    # copy table_desc as template for information each supplier has to deliver
+    for leverancier_id in suppliers_to_process:
+        dc.subheader(f'Supplier: {leverancier_id}', '=')
+        logger.info('')
 
-            # copy table_desc as a template for information each leverancier has to deliver
-            for leverancier_id in suppliers_to_process:
-                logger.info('')
-                logger.info(f'=== {leverancier_id} ===')
-                logger.info('')
+        # count number of deliveries and fetch supplier and delivery accordingly
+        delivery_seq = 1
+        logger.info(f'Dido_create always applies delivery {delivery_seq}')
+        leverancier_config, projects = dc.get_supplier_projects(
+            config = config_dict,
+            supplier = leverancier_id,
+            delivery = 1,
+            keyword = 'SUPPLIERS',
+        )
 
-                # count the number of deliveries and fetch sup[plier and delivery accordingly
-                delivery_seq = 1
-                logger.info(f'Dido_create applies always delivery {delivery_seq}')
-                leverancier_config, projects = dc.get_supplier_projects(config_dict, leverancier_id, delivery_seq)
+        if len(projects) == 0:
+            projects = [project_name]
 
-                for project_key in projects:
-                    logger.info(f'--- {project_key} ---')
-                    project = projects[project_key]
+        for project_key in projects:
+            dc.subheader(f'Project: {project_key}', '-')
+            project = projects[project_key]
 
-                    # copy table info into leverancier_config
-                    leverancier_config[dc.TAG_TABLES] = {}
-                    # []
-                    for table_key in table_desc.keys():
-                        # COPY the table dictionary to the supplier dict,
-                        # else a shared reference will be copied; use copy() function
-                        leverancier_config[dc.TAG_TABLES][table_key]= table_desc[table_key].copy()
+            # copy table info into leverancier_config
+            leverancier_config[dc.TAG_TABLES] = {}
+            for table_key in table_desc.keys():
 
-                        # copy all keys, as they are string, the are correctly copied
-                        for key in table_desc[table_key].keys():
-                            leverancier_config[dc.TAG_TABLES][table_key][key] = table_desc[table_key][key]
-                        # for
-                    # for
+                # COPY the table dictionary to the supplier dict, else shared
+                # printreference will be copied; use copy() function
+                leverancier_config[dc.TAG_TABLES][table_key] = \
+                    table_desc[table_key].copy()
 
-                    # load schema and documentation files and add to leveranciers info
-                    # leveranciers = load_supplier_schemas(leveranciers, root_dir, work_dir)
-                    leveranciers = load_supplier_schemas(leverancier_config, root_dir, work_dir)
-
-                    # add ODL info from database
-                    leveranciers = load_supplier_odl(leverancier_config, project_name, odl_server_config)
-
-                    # check if the tables exist in the database and warn the user if such is the case
-                    #@@@@@
-                    presence, any_present = test_for_existing_tables(project_name, leveranciers, data_server_config)
-                    if any_present:
-                        logger.warning('!!! Er bestaan al tabellen, deze moeten eerst worden vernietigd met "dido_kill_supplier"')
-                        dido_list()
-
-                    # create SQL to create tables
-                    meta_table = dc.load_odl_table(table_name = 'bronbestand_attribuut_meta_description',
-                                            server_config = odl_server_config)
-
-                    write_sql(project_name, sqlfile, leverancier_config, meta_table, db_servers)
-
-                    # create documentation
-                    write_markdown_doc(docfile, leverancier_config, write_columns)
+                # copy all keys, as they are string, the are correctly copied
+                for key in table_desc[table_key].keys():
+                    leverancier_config[dc.TAG_TABLES][table_key][key] = \
+                        table_desc[table_key][key]
                 # for
             # for
-        # with
 
-        # write the commit statement
+            # load schema and documentation files and add to leveranciers info
+            leverancier_config = load_supplier_schemas(
+                supplier_config = leverancier_config,
+                supplier_id = leverancier_id,
+                projects = projects,
+                project_id = project_key,
+                root = root_dir,
+                work = work_dir,
+            )
+
+            # add ODL info from database
+            leverancier_config = load_supplier_odl(
+                supplier_config = leverancier_config,
+                project_name = project_key,
+                server_config = odl_server_config,
+            )
+
+            # warn if the tables exist in the database
+            _, any_present = test_for_existing_tables(
+                supplier_id = leverancier_id,
+                project_name = project_key,
+                supplier_config = leverancier_config,
+                sql_server_config = data_server_config,
+            )
+
+            if any_present:
+                logger.warning('!!! Tables already exist, please destroy '
+                               'these using "dido_kill_supplier"')
+                dido_list()
+
+            # create SQL to create tables
+            schema_name = 'bronbestand_' + 'attribuutmeta' + '_description'
+            meta_table = dc.load_odl_table(
+                table_name = schema_name,
+                server_config = odl_server_config,
+            )
+            leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_TABLE_META] = \
+                meta_table
+
+            # dir_load = os.path.join(work_dir, 'schemas', leverancier_id)
+            # source_file = project['schema_file'] + '.schema.csv'
+            # fname_schema_load = os.path.join(dir_load, source_file)
+            # schema = pd.read_csv(
+            #     fname_schema_load,
+            #     sep = ';',
+            #     dtype = str,
+            #     keep_default_na = False,
+            #     na_values = []
+            # ).fillna('')
+            # schema = leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_TABLE_SCHEMA] = schema
+
+            write_sql(
+                meta_data = meta_table,
+                supplier_config = leverancier_config,
+                supplier_id = leverancier_id,
+                project_config = project,
+                project_name = project_key,
+                overwrite = overwrite_tables,
+                servers = db_servers,
+                sql_filename = sql_filename,
+            )
+
+            # create documentation
+            write_markdown_doc(
+                project_name = project_key,
+                supplier_config = leverancier_config,
+                columns_to_write = write_columns,
+                doc_filename = doc_filename,
+            )
+        # for -- project
+    # for -- supplier
+
+    # write the commit statement
+    with open(sql_filename, encoding="utf8", mode='a') as sqlfile:
         sqlfile.write('\nCOMMIT; -- Transaction\n')
 
-    # with
-
-    dc.report_psql_use('create-tables', db_servers, any_present)
+    dc.report_psql_use(
+        table = 'create-tables',
+        servers = db_servers,
+        tables_exist = any_present,
+        overwrite = overwrite_tables,
+    )
 
     return
 
@@ -1974,7 +2146,7 @@ def main():
     # read the configuration file
     config = dc.read_config(args.project)
 
-    # print banner
+    # display banner
     dc.display_dido_header('Creating Tables and Documentation', config)
 
     # create the tables

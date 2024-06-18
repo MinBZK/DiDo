@@ -56,18 +56,27 @@ def dataframe_to_table(data_frame: pd.DataFrame,
     password = sql_server_config.get('password', DEFAULT_SQL_PASSWORD)
 
     engine = create_sql_engine(
-        username = username, password = password, host = host, port = port, database = database
-        )
+        username = username,
+        password = password,
+        host = host,
+        port = port,
+        database = database,
+    )
 
-    data_frame.to_sql(table_name,
-                      engine,
-                      schema = schema,
-                      if_exists = 'replace',
-                      index = False
-                     )
+    data_frame.to_sql(
+        table_name,
+        engine,
+        schema = schema,
+        if_exists = 'replace',
+        index = False,
+    )
 
     logger = logging.getLogger()
     logger.debug('done pushing dataframe to SQL')
+
+    return
+
+### dataframe_to_table ###
 
 
 def table_to_dataframe(table_name: str,
@@ -138,10 +147,11 @@ def query_to_dataframe(query: str,
                               )
 
     try:
-        result = pd.read_sql(query,
+        result = pd.read_sql(
+            query,
             con = engine,
             coerce_float = True,
-            )
+        )
 
     except:
         result = None
@@ -272,8 +282,8 @@ def sql_statement(statement: str,
             result = cursor.rowcount
             colnames = [desc[0] for desc in cursor.description]
 
-        except:
-            pass
+        except Exception as e:
+            logger.error(f'*** sql_statement Exception: {str(e)}')
 
         # Make the changes to the database persistent
         connection.commit()
@@ -286,7 +296,9 @@ def sql_statement(statement: str,
 
     return result
 
+### sql_statement###
 
+'''
 def sql_statement_wrong(statement: str,
                   verbose = True,
                   sql_server_config: dict = None,
@@ -343,7 +355,7 @@ def sql_statement_wrong(statement: str,
         connection.close()
 
     return result
-
+'''
 
 def row_count(statement: str,
                   verbose = True,

@@ -7,8 +7,6 @@ dido_common.py is a library with common routines for DiDo.
 import os
 import re
 import sys
-import yaml
-import psutil
 import logging
 import argparse
 import sqlalchemy
@@ -17,8 +15,11 @@ import pandas as pd
 
 from datetime import datetime
 from logging.config import dictConfig
-from dotenv import load_dotenv
 from os.path import join, splitext, dirname, basename, exists
+import psutil
+import s3_helper
+
+import yaml
 
 import simple_table as st
 
@@ -26,16 +27,16 @@ logger = logging.getLogger()
 
 # define constants
 # set defaults
-SCHEMA_TEMPLATE = 'bronbestand_attribuut_meta_description'
-META_TEMPLATE   = 'bronbestand_bestand_meta_description'
-EXTRA_TEMPLATE  = 'bronbestand_attribuut_extra_description'
+SCHEMA_TEMPLATE = 'bronbestand_attribuutmeta_description'
+META_TEMPLATE   = 'bronbestand_bestandmeta_description'
+EXTRA_TEMPLATE  = 'bronbestand_attribuutextra_description'
 
 # TAG_TABLE refer to TABLES indices in the confif.yaml file
 TAG_TABLE_SCHEMA   = 'schema'
 TAG_TABLE_META     = 'meta'
 TAG_TABLE_EXTRA    = 'extra'
-TAG_TABLE_DELIVERY = 'levering_feit'
-TAG_TABLE_QUALITY  = 'datakwaliteit_feit'
+TAG_TABLE_DELIVERY = 'levering'
+TAG_TABLE_QUALITY  = 'datakwaliteit'
 
 # Tags refer to dictionary indices of each table
 TAG_TABLES = 'tables'
@@ -43,6 +44,7 @@ TAG_PREFIX = 'prefix'
 TAG_SUFFIX = 'suffix'
 TAG_SCHEMA = 'schema'
 TAG_DATA   = 'data'
+TAG_DESC   = 'description'
 
 # Required ODL columns to add to schema
 ODL_RECORDNO         = 'bronbestand_recordnummer'
@@ -257,6 +259,34 @@ def split_filename(filename: str) -> tuple:
     return dirpath, filebase, extension
 
 
+def get_files_from_dir(folder: str):
+    """ Return all files from directory, ignore directories
+
+    Args:
+        folder (str): directory to get files from
+
+    Returns:
+        list: list of files found
+    """
+    # remove space
+    folder = folder.strip()
+
+    # folder name should end with slash
+    if not folder.endswith('/'):
+        folder += '/'
+
+    # when requested from s3 bucket, call s3 helper function
+    if folder.startswith('s3://'):
+        files = s3_helper.s3_command_ls_return_fullpath(folder=folder)
+    else:
+        files = [item for item in os.listdir(folder)
+                    if os.path.isfile(os.path.join(folder, item))]
+
+    return files
+
+### get_files_from_dir ###
+
+
 def change_column_name(col_name: str, empty: str = 'kolom_') -> str:
     """align to snake_case; only alfanum and underscores, multiple underscores reduced to one
 
@@ -357,24 +387,32 @@ def get_par(config: dict, key: str, default = None):
     Args:
         config (dict): dictuionary or DataFrame to fetch the value from
         key (str): value to find in dictionary
-        default (_type_, optional): default when value is not in dict. Defaults to None.
+        default (type, optional): default when value is not in dict.
+            Defaults to None.
+
+    Returns:
+        config[key] when key is present, else default when not None
+
+    Raises:
+        DiDoError when key not found and default is not None
     """
     if isinstance(config, pd.DataFrame):
         # config is DataFrame, look for key in index
         if key in config.index:
             return str(config.loc[key])
-
         else:
             return default
+        # if
 
     else:
         # dictionary, return config[key] when present
         if key in config:
             return config[key]
-
         else:
             return default
+        # if
 
+    # if
 ### get_par ###
 
 
@@ -418,22 +456,31 @@ def read_cli():
     app_path = {'path': pad, 'name': fn, 'ext': ext}
 
     argParser = argparse.ArgumentParser()
-    argParser.add_argument("-c", "--compare", help="Compare action: 'dump' or 'compare'",
+    argParser.add_argument("-c", "--compare",
+                           help="Compare action: 'dump' or 'compare'",
                            choices=['compare', 'dump'],
                            default='compare', const='compare', nargs='?')
-    argParser.add_argument("-d", "--delivery", help="Name of delivery file in root/data directory")
+    argParser.add_argument("-d", "--delivery",
+                           help="Name of delivery file in root/data directory")
     argParser.add_argument("--date", help="Date to take snapshot of database ")
     argParser.add_argument("-p", "--project", help="Path to project directory")
-    argParser.add_argument("-r", "--reset", help="Empties the logfile before writing it",
+    argParser.add_argument("-r", "--reset",
+                           help="Empties the logfile before writing it",
                            action='store_const', const='reset')
     argParser.add_argument("-s", "--supplier", help="Name of supplier")
-    argParser.add_argument("-t", "--target", help="File name to read target data from")
-    argParser.add_argument("-v", "--view", help="View database table in dido_compare",
+    argParser.add_argument("-t", "--target",
+                           help="File name to read target data from")
+    argParser.add_argument("-v", "--view",
+                           help="View database table in dido_compare",
                            action='store_const', const='view' )
     argParser.add_argument("--Yes",  help="Answer Yes to all questions",
                            action='store_const', const='Ja')
 
     args = argParser.parse_args()
+
+    if args.project is None:
+        print('\n*** No -p <project-dir> specified at program call\n')
+        sys.exit(1)
 
     return  app_path, args
 
@@ -603,10 +650,11 @@ def read_config(project_dir: str) -> dict:
     with open(configfile, encoding = 'utf8', mode = "r") as infile:
         config = yaml.safe_load(infile)
 
+    config['PROJECT_DIR'] = project_dir
+
     sql = load_sql()
 
-    item_names = ['ROOT_DIR', 'WORK_DIR', 'PROJECT_NAME', 'HOST',
-                  'SERVER_CONFIGS']
+    item_names = ['ROOT_DIR', 'WORK_DIR', 'HOST', 'SERVER_CONFIGS']
     errors = False
     for item in item_names:
         if item not in config.keys():
@@ -690,9 +738,37 @@ def read_config(project_dir: str) -> dict:
 ### read_config ###
 
 
-def read_delivery_config(project_path: str, delivery_filename: str):
+def get_config_file(config_path: str, config_name: str):
+    """ Read a .yaml file from the config directory
 
-    delivery_filename = os.path.join(project_path, 'data', delivery_filename)
+    Args:
+        config_path (str): path to the config directory
+        config_name (str): name of the config file
+    """
+    configfile = os.path.join(config_path, config_name)
+
+    with open(configfile, encoding = 'utf8', mode = "r") as infile:
+        config = yaml.safe_load(infile)
+
+    return config
+
+### get_config_file ###
+
+
+def read_delivery_config(project_path: str,
+                         delivery_filename: str,
+                        ):
+    """Read a delivery.yaml file
+
+    Args:
+        project_path (str): path to the project
+        delivery_filename (str): filename of the delivery file
+            (defaults to delivery.yaml)
+
+    Returns:
+        dict: the delivery.yaml file
+    """
+    delivery_filename = os.path.join(project_path, 'config', delivery_filename)
     with open(delivery_filename, encoding = 'utf8', mode = "r") as infile:
         delivery = yaml.safe_load(infile)
 
@@ -732,15 +808,87 @@ def load_credentials(project_dir: str) -> dict:
 ### load_credentials ###
 
 
+def compute_periods(period: str, value: int, servers: dict):
+    # get levering_rapportage period table from odl
+    periods = st.table_to_dataframe(
+        table_name = 'odl_rapportageperiodes_description',
+        sql_server_config = servers['ODL_SERVER_CONFIG'],
+    )
+
+    # split into year-<letter><int> anf check
+    try:
+        year = period.split('-', 1)[0]
+        rest = period.split('-', 1)[1]
+        qualifier = rest[0]
+        if qualifier not in ['I', 'J']:
+            counter = int(rest[1:])
+
+        if len(year) != 4:
+            raise DiDoError('*** Year should be between 1000-9999')
+
+        year = int(year)
+
+    except Exception as err:
+        logger.error('compute_periods: ' + str(err))
+        raise DiDoError('*** Malformed period, should be of form: '
+                        'YYYY-<period><int>')
+
+    # try..except
+
+    # get allowed periods and set index to allowed periods
+    allowed = periods['leverancier_kolomtype'].tolist()
+    periods = periods.set_index('leverancier_kolomtype')
+    if qualifier not in allowed:
+        raise DiDoError(f'*** Qualifier {period} not allowed: {allowed}')
+
+    # get max value for qualifier
+    domain = periods.loc[qualifier, 'domein']
+    if qualifier not in ['A', 'I', 'J']:
+        max_value = int(domain.split(':')[1])
+    else:
+        max_value = 0
+
+    # apply operation
+    if qualifier == 'J':
+        year += value
+        counter = ''
+
+    elif qualifier in ['A']:
+        counter += value
+        if counter < 1:
+            raise DiDoError(f'*** Compute_period: qualifier "A": value '
+                            f' < 1: {counter}')
+
+    elif qualifier != 'I':
+        counter += value
+        while counter > max_value:
+            year += 1
+            counter -= max_value
+
+        while counter < 1:
+            year -= 1
+            counter += max_value
+
+        if year < 1000 or year > 9999:
+            raise DiDoError(f'*** Compute_period: year {year} exceeds bounds '
+                             '[1000-9999]')
+
+        # if
+    # if
+
+    new_period = f'{year}-{qualifier}{counter}'
+
+    return new_period
+
+### compute_periods ###
+
+
 def center_text(text: str, width: int):
     delta = width - len(text)
     delta_2 = int(delta / 2)
     front = delta_2
     back = delta - delta_2
     text = '*' + front * ' ' + text + back * ' ' + '*'
-    # dido = '*' + dido + '*'
-    # asterisks = len(dido) * '*'
-    # between = '*' + (len(dido) - 2) * ' ' + '*'
 
     return text
 
@@ -791,6 +939,18 @@ def display_dido_header(text: str = None, config = None):
     return
 
 ### display_dido_header ###
+
+
+def subheader(text: str, char: str):
+    text = 3 * char + ' ' + text + ' ' + 3 * char
+    logger.info('')
+    logger.info(len(text) * char)
+    logger.info(text)
+    logger.info(len(text) * char)
+    logger.info('')
+
+    return
+### subheader ###
 
 
 def get_limits(config: dict):
@@ -906,7 +1066,11 @@ def get_table_names(project_name: str, supplier: str, postfix: str = 'data') -> 
 ### get_table_names ###
 
 
-def get_supplier_projects(config: dict, supplier: str, delivery):
+def get_supplier_projects(config: dict,
+                          supplier: str,
+                          delivery,
+                          keyword: str,
+                         ):
     """ Returns supplier s info from supplier.
 
         The relevant delivery info is copied and all info about deliveries
@@ -920,44 +1084,20 @@ def get_supplier_projects(config: dict, supplier: str, delivery):
     Returns:
         dict: dictionary of supplier addjusted with correct delivery
     """
-    errors = False
-    project_name = config['PROJECT_NAME']
-    suppliers = config['SUPPLIERS']
+    suppliers = config[keyword]
     leverancier = suppliers[supplier].copy()
 
     # test if supplier contains projects
-    projects = {}
-    n_projects = sum([1 if 'project_' in key else 0 for key in leverancier.keys()])
+    project_keys = leverancier.keys()
 
     # old style projects: no projects means al is one project (project_name)
-    if n_projects == 0:
-        projects[project_name] = leverancier.copy()
+    if len(project_keys) == 0:
+        raise DiDoError(f'*** No projects define for supplier {supplier}')
 
     # project found, only statements just below supplier are projects
-    elif n_projects == len(leverancier.keys()):
-        for proj in leverancier.keys():
-            part_1, part_2 = proj.split('_', 1)
-
-            if len(part_2) == 0:
-                errors = True
-                logger.critical(f'Empty project part for project {proj}')
-            else:
-                projects[part_2] = leverancier[proj].copy()
-            # if
-        # for
-
-    # confusing situation: not allowed. Either all statements are a projects
-    # (just below the supplier) or there is no project statement at all
-    else:
-        errors = True
-
-    # if
-
-    if errors:
-        logger.critical('*** Config.yaml either contains no project or only projects')
-        raise DiDoError('*** Correct this error and try again')
-
-    # if
+    projects = {}
+    for proj in project_keys:
+        projects[proj] = leverancier[proj].copy()
 
     leverancier['config'] = config
     leverancier['supplier_id'] = supplier
@@ -982,9 +1122,8 @@ def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
         dict: dictionary of supplier addjusted with correct delivery
     """
     splits = cargo_name.split('_')
-    if len(splits) == 2:
-        if splits[0] != 'delivery':
-            raise_DiDoError(f'*** Delivery should start with "delivery_", error for "{cargo_name}"')
+    if splits[0] != 'delivery':
+        raise DiDoError(f'*** Delivery should start with "delivery_", error for "{cargo_name}"')
 
     cargo_dict[ODL_LEVERING_FREK] = splits[1]
     cargo_dict['supplier_id'] = supplier_name
@@ -994,8 +1133,8 @@ def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
 ### get_supplier_dict ###
 
 
-def get_cargo(cargo_config: dict, supplier: str):
-    cargo = cargo_config['DELIVERIES'][supplier]
+def get_cargo(cargo_config: dict, supplier: str, project_key: str):
+    cargo = cargo_config['DELIVERIES'][supplier][project_key]
 
     return cargo
 
@@ -1017,13 +1156,13 @@ def get_current_delivery_seq(project_name: str, supplier: str, server_config: di
 ### get_current_delivery_seq ###
 
 
-def report_psql_use(table: str, servers: dict, tables_exist: bool):
+def report_psql_use(table: str, servers: dict, tables_exist: bool, overwrite: bool):
     """ Reports to a user he shoukld use psql. The correct command is displayed
 
     Args:
         table (str): name of the fiole containing the SQL instructions
         servers (dict): dictionary of server configurations
-        tables_exist (bool): True if tablkes already exist, else False
+        tables_exist (bool): True if tables already exist, else False
     """
     host = servers['DATA_SERVER_CONFIG']['POSTGRES_HOST']
     user = servers['DATA_SERVER_CONFIG']['POSTGRES_USER']
@@ -1040,9 +1179,14 @@ def report_psql_use(table: str, servers: dict, tables_exist: bool):
 
     if tables_exist:
         logger.info('')
-        logger.error('*** You have been warned that the tables you want to create already exist.')
-        logger.error('*** If you really want to recreate these tables, thereby erasing current contents')
-        logger.error('*** run dido_kill_supplier.py ***')
+        logger.error('*** You have been warned that the tables you want to create already exists.')
+        if overwrite:
+            logger.error('*** Current tables including contents will be deleted ***')
+            logger.error('*** Be sure that is what you wish ***')
+
+        else:
+            logger.error('*** If you really want to recreate these tables, thereby erasing current contents')
+            logger.error('*** run dido_kill_supplier.py ***')
 
     logger.info('')
 

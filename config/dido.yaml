@@ -22,8 +22,8 @@ WORKDIR_STRUCTURE: docs,sql,schemas,todo,done,tmp,tests
 
 # versions
 DIDO_VERSION_MAJOR: 0
-DIDO_VERSION_MINOR: 7
-DIDO_VERSION_PATCH: 7
+DIDO_VERSION_MINOR: 8
+DIDO_VERSION_PATCH: 0
 
 SERVERS:
   datawarehouse_dev: 10.10.12.12
@@ -32,3 +32,48 @@ SERVERS:
 
 BEGINNING_OF_WORLD: 1970-01-01 00:00:00
 END_OF_WORLD: 9999-12-31 23:59:59
+
+###########################################
+# !!! DON'T CHANGE STUF BELOW THIS LINE !!!
+# tables to be created
+TABLES:
+  schema:
+    table_root: attribuutmeta
+    template: yes
+    comment: <odl>
+    schema: <self>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+
+  meta:
+    table_root: bestandmeta
+    template: meta
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+
+  datakwaliteit:
+    table_root: datakwaliteit
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+
+  levering:
+    table_root: levering
+    template: no
+    comment: <odl>
+    schema: <odl>
+    create_description: yes
+    create_data: yes
+    table: yes
+    data: no
+

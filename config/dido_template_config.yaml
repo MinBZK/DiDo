@@ -8,11 +8,12 @@ VERBOSE: True
 # Example suppliers
 SUPPLIERS:
   {supplier}:
-    # schema description for dido-create
-    {data_dict}
-    schema_file: {schema_filename}
-    prefix: # name of file to markdown description of the project
-    suffix: # ditto, but is used after the schema information
+    {project}
+      # schema description for dido-create
+      {data_dict}
+      schema_file: {schema_filename}
+      prefix: # name of file to markdown description of the project
+      suffix: # ditto, but is used after the schema information
 
 SUPPLIERS_TO_PROCESS: [{supplier}]
 
@@ -72,55 +73,3 @@ COLUMNS:
   - attribuut_datum_einde
 
 {data_types}
-
-###########################################
-# !!! DON'T CHANGE STUF BELOW THIS LINE !!!
-# tables to be created
-TABLES:
-  schema:
-    table_root: attribuut_meta
-    template: yes
-    comment: <odl>
-    schema: <self>
-    create_description: yes
-    create_data: yes
-    table: yes
-    data: no
-    prefix: ''
-    suffix: ''
-
-  meta:
-    table_root: bestand_meta
-    template: meta
-    comment: <odl>
-    schema: <odl>
-    create_description: yes
-    create_data: yes
-    table: yes
-    data: no
-    prefix: ''
-    suffix: ''
-
-  datakwaliteit_feit:
-    table_root: datakwaliteit_feit
-    template: no
-    comment: <odl>
-    schema: <odl>
-    create_description: yes
-    create_data: yes
-    table: yes
-    data: no
-    prefix: ''
-    suffix: ''
-
-  levering_feit:
-    table_root: levering_feit
-    template: no
-    comment: <odl>
-    schema: <odl>
-    create_description: yes
-    create_data: yes
-    table: yes
-    data: no
-    prefix: ''
-    suffix: ''

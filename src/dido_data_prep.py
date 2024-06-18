@@ -25,7 +25,7 @@ from dido_common import DiDoError
 
 # pylint: disable=bare-except, line-too-long, consider-using-enumerate
 # pylint: disable=logging-fstring-interpolation, too-many-locals
-# pylint: disable=pointless-string-statement
+# pylint: disable=pointless-string-statement, consider-using-dict-items
 
 # print all columns of dataframe
 pd.set_option('display.max_columns', None)
@@ -218,7 +218,7 @@ def load_pdirekt_header_file(supplier_config: dict,
         s3_helper.s3_command_get_file(
             download_to = filename,
             filepath_s3 = server_path,
-            force_overwrite = True
+            force_overwrite = True,
         )
 
     # load the header into a dataframe
@@ -259,7 +259,7 @@ def load_data(supplier_config: dict,
     data_dicts = dc.get_par(supplier_config, 'data_description')
 
     # get the delivery_type, if omitted use mode: insert as default
-    # delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
+    delivery_type = dc.get_par(supplier_config, 'delivery_type', {'mode': 'insert'})
 
     cpu = time.time()
 
@@ -310,18 +310,20 @@ def load_data(supplier_config: dict,
 
     else:
         logger.info('Reading with headers')
-        data = pd.read_csv(filename,
-            sep = delimiter,
-            dtype = str,
-            keep_default_na = False,
-            nrows = sample_size,
-            engine = 'c',
-            encoding = encoding,
-        )
+        try:
+            data = pd.read_csv(
+                filename,
+                sep = delimiter,
+                dtype = str,
+                keep_default_na = False,
+                nrows = sample_size,
+                engine = 'c',
+                encoding = encoding,
+            )
+        except pd.errors.ParserError as err:
+            raise DiDoError(str(err))
 
     # if
-
-    # find out if the file contains headers or if a header sheet is provided
 
     # Fetch schema columns
     columns = schema['kolomnaam'].tolist()
@@ -386,8 +388,10 @@ def evaluate_headers(data: pd.DataFrame,
                      schema: pd.DataFrame,
                      headers: dict,
                      encoding: str,
+                     delivery_type: dict,
                     ):
-    """ Compares a list of headers with schema columns and flags inconsistencies
+    """ Compares a list of headers with schema columns and
+        flags inconsistencies
 
     Args:
         data (pd.DataFrame): data frame containing data and headers
@@ -397,6 +401,7 @@ def evaluate_headers(data: pd.DataFrame,
     """
     data_dicts = dc.get_par(supplier_config, 'data_description')
     header_columns = None
+    n_mutations = 0
 
     logger.info('')
 
@@ -432,8 +437,8 @@ def evaluate_headers(data: pd.DataFrame,
         # if
     # if
 
-    # TODO: to strip the dido meta columns from the schema, simply the first
-    # 6 columns are stripped. This should be derived from the extra_columns themselves
+    # convert header_columns to list
+    header_columns = list(header_columns)
 
     # 3. if not, get them from the schema
     if header_columns is None or len(header_columns) == 0:
@@ -444,15 +449,42 @@ def evaluate_headers(data: pd.DataFrame,
 
     header_columns = [dc.change_column_name(x) for x in header_columns]
 
+    # TODO: to strip the dido meta columns from the schema, simply the first
+    # 6 columns are stripped. This should be derived from the extra_columns themselves
+
     # remove meta columns from schema, currently the first six columns
     schema_columns = schema['kolomnaam'].tolist()[6:]
+
+    # 4. if mode is 'mutate', add the mutation column(s)
+    if delivery_type is not None:
+        if delivery_type['mode'] == 'mutate':
+            instruction_list = dc.get_par(
+                config = delivery_type,
+                key = 'mutation_instructions',
+                default = None
+            )
+
+            if instruction_list is None:
+                error = True
+                logger.error(f'Mode = mutate requires mutation_instructions')
+
+            else:
+                # TODO: mutation columns are now prepended, allow the user to insert at desired positions
+                for i, name in enumerate(instruction_list):
+                    schema_columns.insert(i, name)
+
+                n_mutations = len(instruction_list)
+
+            # if
+        # if
+    # if
 
     # now they should be of equal length
     errors = False
     logger.info(f'Number of schema columns: {len(schema_columns)} vs. supplied headers: {len(header_columns)}')
 
     # if not, examine what's wrong
-    if len(schema_columns) != len(header_columns):
+    if len(schema_columns) != len(header_columns): # + n_mutations:
         errors = True
         logger.error('Number of columns do not match')
 
@@ -493,7 +525,7 @@ def evaluate_headers(data: pd.DataFrame,
 def process_strip_space(data: pd.DataFrame,
                         supplier: str,
                         schema: pd.DataFrame,
-                        meta: pd.DataFrame,
+                        extra: list,
                         strip_space: dict,
                        ):
     mem = psutil.virtual_memory()
@@ -510,7 +542,8 @@ def process_strip_space(data: pd.DataFrame,
     for col in strip_cols:
         if col in data.columns:
             pg_col = dc.change_column_name(col)
-            if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
+            # if schema.loc[pg_col, 'leverancier_kolomnaam'] != dc.VAL_DIDO_GEN:
+            if pg_col not in extra:
                 elapsed = time.time()
                 #data[col] = data[col].replace({"^\s+|\s+$": ""}, regex = True)
                 data[col] = data[col].str.strip()
@@ -668,9 +701,11 @@ def process_data(data: pd.DataFrame,
                  renames: dict,
                  real_types: list,
                  strip_space: dict,
+                 servers: dict,
                 ):
     # set kolomnaam as index
     schema = schema.set_index('kolomnaam')
+    extra_columns = get_bootstrap_data_headers(servers['ODL_SERVER_CONFIG'])
 
     mem = psutil.virtual_memory()
     dc.report_ram('Memory use at process_data')
@@ -684,7 +719,6 @@ def process_data(data: pd.DataFrame,
             data = data,
             supplier = supplier,
             schema = schema,
-            meta = meta,
             select_data = select_data,
         )
 
@@ -701,7 +735,7 @@ def process_data(data: pd.DataFrame,
             data = data,
             supplier = supplier,
             schema = schema,
-            meta = meta,
+            extra = extra_columns,
             strip_space = strip_space,
         )
 
@@ -724,7 +758,7 @@ def process_data(data: pd.DataFrame,
             data = data,
             supplier = supplier,
             schema = schema,
-            meta = meta,
+            extra = extra_columns,
             real_types = real_types,
         )
 
@@ -1000,6 +1034,12 @@ def prepare_one_delivery(cargo: dict,
         )
 
         # Acquire column names
+        delivery_type = dc.get_par(
+            config = cargo,
+            key = 'delivery_type',
+            default = {'mode': 'insert'}
+        )
+
         headers = evaluate_headers(
             data = data,
             supplier_config = cargo,
@@ -1007,6 +1047,7 @@ def prepare_one_delivery(cargo: dict,
             schema = leverancier_schema,
             headers = headers,
             encoding = encoding,
+            delivery_type = delivery_type,
         )
         if headers is not None:
             data.columns = headers
@@ -1024,6 +1065,7 @@ def prepare_one_delivery(cargo: dict,
             renames = rename_copy,
             real_types = real_types,
             strip_space = strip_space,
+            servers = db_servers,
         )
 
         # Save results
@@ -1055,10 +1097,13 @@ def dido_data_prep(header: str):
     config_dict = dc.read_config(args.project)
     dc.display_dido_header(header, config_dict)
 
-    delivery_config = dc.read_delivery_config(config_dict['ROOT_DIR'], args.delivery)
+    delivery_config = dc.read_delivery_config(
+        project_path = config_dict['PROJECT_DIR'],
+        delivery_filename = args.delivery,
+    )
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
+    # project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
@@ -1069,7 +1114,7 @@ def dido_data_prep(header: str):
     db_servers = config_dict['SERVER_CONFIGS']
 
     # select which suppliers to process
-    suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
+    suppliers_to_process = dc.get_par(delivery_config, 'SUPPLIERS_TO_PROCESS', '*')
 
     # get real_types
     allowed_datatypes, sub_types = dc.create_data_types()
@@ -1083,63 +1128,81 @@ def dido_data_prep(header: str):
 
     # process each supplier
     for leverancier_id in suppliers_to_process:
-        logger.info('')
-        logger.info(f'=== {leverancier_id} ===')
-        logger.info('')
+        dc.subheader(f'{leverancier_id}', '=')
 
-        # get all cargo from the delivery_dict
-        cargo_dict = dc.get_cargo(delivery_config, leverancier_id)
+        leverancier, projects = dc.get_supplier_projects(
+            config = delivery_config,
+            supplier = leverancier_id,
+            delivery = leverancier_id,
+            keyword = 'DELIVERIES',
+        )
 
-        # process all deliveries
-        for cargo_name in cargo_dict.keys():
-            logger.info('')
-            print_name = f'--- Delivery {cargo_name} ---'
-            logger.info(len(print_name) * '-')
-            logger.info(print_name)
-            logger.info(len(print_name) * '-')
-            logger.info('')
+        for project_key in projects.keys():
+            dc.subheader(f'Project: {project_key}', '-')
+            project = projects[project_key]
 
-            # get cargo associated with the cargo_name
-            cargo = cargo_dict[cargo_name]
-            cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
+            # get all cargo from the delivery_dict
+            cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
 
-            # add config and delivery dicts as they are needed while processing the cargo
-            cargo['config'] = config_dict
-            cargo['delivery'] = delivery_config
+            # process only specified deliveries
+            deliveries_to_process = dc.get_par(
+                config = delivery_config,
+                key = 'DELIVERIES_TO_PROCESS',
+                default = '*',
+            )
+            if deliveries_to_process == '*':
+                deliveries_to_process = cargo_dict.keys()
 
-            # present all deliveries and the selected one
-            logger.info('Delivery configs supplied (> is selected)')
-            for key in cargo_dict.keys():
-                if key == cargo_name:
-                    logger.info(f" > {key}")
-                else:
-                    logger.info(f" - {key}")
-                # if
-            # for
-
-            # delivery exists in the database. If so, skip this delivery
-            if dc.delivery_exists(cargo, leverancier_id, project_name, db_servers):
-                logger.info('')
-                logger.error(f'*** delivery already exists: '
-                             f'{leverancier_id} - {cargo_name}, skipped')
-
-                if not overwrite:
-                    logger.info('Specify ENFORCE_PREP_IF_TABLE_EXISTS: yes in your delivery.yaml')
-                    logger.info('if you wish to check the data quality')
-
+            # process all deliveries
+            for cargo_name in cargo_dict.keys():
+                if cargo_name not in deliveries_to_process:
+                    logger.info(f'[Delivery {cargo_name} not in '
+                                 'DELIVERIES_TO_PROCESS, skipped]')
                     continue
 
-                else:
-                    logger.warning('!!! ENFORCE_PREP_IF_TABLE_EXISTS: yes specified, '
-                                   'data will be overwritten')
+                dc.subheader(f'Delivery: {cargo_name}', '.')
+
+                # get cargo associated with the cargo_name
+                cargo = cargo_dict[cargo_name]
+                cargo = dc.enhance_cargo_dict(cargo, cargo_name, leverancier_id)
+
+                # add config and delivery dicts as they are needed while processing the cargo
+                cargo['config'] = config_dict
+                cargo['delivery'] = delivery_config
+
+                # present all deliveries and the selected one
+                logger.info('Delivery configs supplied (> is selected)')
+                for key in cargo_dict.keys():
+                    if key == cargo_name:
+                        logger.info(f" > {key}")
+                    else:
+                        logger.info(f" - {key}")
+                    # if
+                # for
+
+                # delivery exists in the database. If so, skip this delivery
+                if dc.delivery_exists(cargo, leverancier_id, project_key, db_servers):
+                    logger.info('')
+                    logger.error(f'*** delivery already exists: '
+                                f'{leverancier_id} - {cargo_name}, skipped')
+
+                    if not overwrite:
+                        logger.info('Specify ENFORCE_PREP_IF_TABLE_EXISTS: yes in your delivery.yaml')
+                        logger.info('if you wish to check the data quality')
+
+                        continue
+
+                    else:
+                        logger.warning('!!! ENFORCE_PREP_IF_TABLE_EXISTS: yes specified, '
+                                    'data will be overwritten')
+                    # if
                 # if
-            # if
-            data_description = find_data_files(cargo, leverancier_id, root_dir)
-            cargo['data_description'] = data_description
+                data_description = find_data_files(cargo, leverancier_id, root_dir)
+                cargo['data_description'] = data_description
 
-            prepare_one_delivery(cargo, leverancier_id, project_name, real_types)
+                prepare_one_delivery(cargo, leverancier_id, project_key, real_types)
 
-        # for
+            # for
     # for
 
     cpu = time.time() - cpu

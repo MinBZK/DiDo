@@ -1,0 +1,16 @@
+    {project}:
+      schema_file: {schema_filename}
+
+      data_dictionary:
+        schema_source: <P-Direkt>
+        data_dict: {data_dict_path}
+        header_file: yes
+        columns:
+          kolomnaam: FIELDNAME
+          leverancier_kolomnaam: FIELDNAME
+          leverancier_kolomtype: TYPE
+
+      prefix: # name of file to markdown description of the project
+      suffix: # ditto, but is used after the schema information
+
+    ### Project: {project} ###

@@ -13,6 +13,10 @@ import sqlalchemy
 import dido_common as dc
 import simple_table as st
 
+# pylint: disable=bare-except, line-too-long, consider-using-enumerate
+# pylint: disable=logging-fstring-interpolation, too-many-locals
+# pylint: disable=pointless-string-statement, consider-using-dict-items
+
 # print all columns of dataframe
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
@@ -33,7 +37,7 @@ def get_info(table_name: str, tables_name: dict, server_config: dict):
         _type_: _description_
     """
     # Initialize info record
-    info = {'table': 'Tabel bestaat',
+    info = {'table': 'Table exists',
             'records': 0,
             'deliveries': None,
         }
@@ -67,7 +71,7 @@ def get_info(table_name: str, tables_name: dict, server_config: dict):
             )
 
     except sqlalchemy.exc.ProgrammingError:
-        info['table'] = '*** Tabel bestaat niet ***'
+        info['table'] = '*Table does not exist*'
 
     return info
 
@@ -87,7 +91,7 @@ def get_data_table_names(project_name: str, leverancier: str) -> dict:
     return table_names
 
 
-def get_leveranties(project_name: str, supplier: str, server_config: dict) -> dict:
+def get_leveranties(suppliers: dict, supplier_name: str, server_config: dict) -> dict:
     """ get all leveranties for this supplier
 
     Args:
@@ -98,17 +102,32 @@ def get_leveranties(project_name: str, supplier: str, server_config: dict) -> di
     Returns:
         dict: for all suppliers and data table a dict of all supplies
     """
-    tables_name = get_data_table_names(project_name, supplier)
-    tables_info = {}
 
-    for key in tables_name.keys():
-        info = get_info(tables_name[key], tables_name, server_config)
-        tables_info[key] = info
+    supplier_info = {}
+    supplier = suppliers[supplier_name]
+    for project_key in supplier.keys():
+        tables_info = {}
+        project = supplier[project_key]
 
-    return tables_info
+        tables_name = get_data_table_names(project_key, supplier_name)
+
+        for key in tables_name.keys():
+            info = get_info(tables_name[key], tables_name, server_config)
+            # info['project'] = project_key
+            tables_info[key] = info
+
+        # for
+
+        supplier_info[project_key] = tables_info
+
+    # for
+
+    # print(supplier_info)
+
+    return supplier_info
 
 
-def display_leveranciers(project_name: str, leveranciers: dict, data_server_config: dict):
+def display_leveranciers(leveranciers: dict, data_server_config: dict):
     """ Displays the supplies of of specific supplier
 
     Args:
@@ -123,11 +142,13 @@ def display_leveranciers(project_name: str, leveranciers: dict, data_server_conf
     leverancier_met_data = []
 
     for key in leveranciers.keys():
-        leveranties = get_leveranties(project_name, key, data_server_config)
-        if leveranties['schema']['records'] > 0:
-            leverancier_met_data.append(key)
+        supplier = leveranciers[key]
+        for project_name in supplier.keys():
+            leveranties = get_leveranties(supplier, data_server_config)
+            if leveranties['schema']['records'] > 0:
+                leverancier_met_data.append(key)
 
-            logger.info(f' - {key}')
+                logger.info(f' - {key}')
 
     return leverancier_met_data, leveranciers.keys()
 
@@ -143,23 +164,28 @@ def display_leveranties(leveranties: dict, supplier: str):
 
     logger.info('')
     logger.info(f'[Leverancier: {supplier}]')
+    # print(leveranties)
 
-    for key in leveranties.keys():
-        logger.info(f' - {key}: {leveranties[key]["table"]}')
-        info = leveranties[key]
-        logger.info(f'   {info["records"]} records')
+    for project_key in leveranties.keys():
+        print(f'==> Supplier: {supplier}, Project: {project_key}')
+        for key in leveranties[project_key].keys():
+            info = leveranties[project_key][key]
+            exst = 'exists' in info['table']
+            if exst:
+                logger.info(f' - {key}: {info["table"]}, ' \
+                            f'{info["records"]} records')
+                if info['table'][0] != '*':
+                    if info['deliveries'] is not None:
+                        logger.info(f'    Levering rapportageperiode     Aantal')
+                        for index, row in info['deliveries'].iterrows():
+                            logger.info(f'{row["levering_rapportageperiode"]:>30s} {row["count"]:10d}')
 
-        if info['table'][0] != '*':
-        #     logger.info(f'    {info["table"]}')
+            else:
+                logger.info(f'*No tables present*')
 
-        # else:
-            # logger.info(f'    {info["table"]}, {info["records"]} records')
-            if info['deliveries'] is not None:
-                logger.info(f'    Levering rapportageperiode     Aantal')
-                for index, row in info['deliveries'].iterrows():
-                    logger.info(f'{row["levering_rapportageperiode"]:>30s} {row["count"]:10d}')
-
-        # if
+            # if
+        # for
+        logger.info('')
     # for
 
     return
@@ -177,6 +203,8 @@ def show_database(title: str, config: dict):
     logger.info('')
 
     return
+
+### show_database ###
 
 
 def dido_list(header: str = None):
@@ -200,33 +228,33 @@ def dido_list(header: str = None):
     foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
-    parameters = config_dict['PARAMETERS']
-
-   # create the output file names
-    report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.csv')
-    report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
-    sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'remove-deliveries.sql')
 
     # if there is no supplier that received any supply, there is nothing to remove.
     # The program terminates
-    n_suppliers, suppliers = display_leveranciers(project_name, leveranciers, data_server_config)
-    if len(suppliers) < 1:
+    # n_suppliers, suppliers = display_leveranciers(
+    #     leveranciers = leveranciers,
+    #     data_server_config = data_server_config,
+    # )
+
+    if len(leveranciers) < 1:
         logger.info('')
         logger.warning('Er zijn geen leveranciers of leveranties.')
 
         sys.exit()
 
     else:
-        for leverancier in suppliers:
-            leveranties = get_leveranties(project_name, leverancier, data_server_config)
+        for leverancier in leveranciers:
+            leveranties = get_leveranties(
+                suppliers = leveranciers,
+                supplier_name = leverancier,
+                server_config = data_server_config,
+            )
             display_leveranties(leveranties, leverancier)
+
+        # for
 
     #if
 
@@ -236,6 +264,8 @@ def dido_list(header: str = None):
     logger.info('')
 
     return
+
+### dido_list ###
 
 
 if __name__ == '__main__':
