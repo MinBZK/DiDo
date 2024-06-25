@@ -769,8 +769,12 @@ def read_delivery_config(project_path: str,
         dict: the delivery.yaml file
     """
     delivery_filename = os.path.join(project_path, 'config', delivery_filename)
-    with open(delivery_filename, encoding = 'utf8', mode = "r") as infile:
-        delivery = yaml.safe_load(infile)
+    try:
+        with open(delivery_filename, encoding = 'utf8', mode = "r") as infile:
+            delivery = yaml.safe_load(infile)
+
+    except:
+        raise DiDoError(f'*** Delivery file not found: {delivery_filename}')
 
     return delivery
 
@@ -1210,7 +1214,12 @@ def show_database(server_config: dict, table_name: str, pfun = logger.debug):
 ### show_database ###
 
 
-def delivery_exists(delivery: dict, supplier_id: str, project_name: str, server_configs: dict) -> bool:
+def delivery_exists(delivery: dict,
+                    supplier_id: str,
+                    project_name: str,
+                    cargo_name: str,
+                    server_configs: dict
+                   ) -> bool:
     """ Checks whether a delivery exists. Column 'levering_rapportageperiode is used
         to check this.
 
@@ -1251,7 +1260,7 @@ def delivery_exists(delivery: dict, supplier_id: str, project_name: str, server_
 
     # if
 
-    current_delivery = delivery[ODL_LEVERING_FREK]
+    current_delivery = cargo_name.split('_')[1]
     exists = current_delivery in leveringen_lijst
     if exists:
         logger.debug(f'Delivery {current_delivery} already in the database')

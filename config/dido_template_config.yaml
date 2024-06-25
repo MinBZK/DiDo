@@ -1,14 +1,11 @@
 # DiDo config.yaml example file
-PROJECT_NAME: {project_name}
 ROOT_DIR: {root_dir}
 WORK_DIR: {work_dir}
-
-VERBOSE: True
 
 # Example suppliers
 SUPPLIERS:
   {supplier}:
-    {project}
+    {project_name}:
       # schema description for dido-create
       {data_dict}
       schema_file: {schema_filename}

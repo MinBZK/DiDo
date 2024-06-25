@@ -2,7 +2,8 @@
 Dido-begin prepareert een working directory op basis van een root directory
 en configuratiefiles.
 
-Het uitgangspunt is dat dido alles kan reconstrueren op basis van de gegevens
+Het uitgangspunt i
+s dat dido alles kan reconstrueren op basis van de gegevens
 in de root directory en de configuratiefile, samen met de data. In de schemas en
 docs directory van de root directory staat informatie die gelezen, bewerkt en
 gekopieerd wordt naar de working directory.
@@ -745,14 +746,11 @@ def write_markdown_doc(project_name: str,
         data = None
 
     # get version info
-    major_odl = odl_meta_data.loc[0, 'odl_version_major']
-    minor_odl = odl_meta_data.loc[0, 'odl_version_minor']
-    patch_odl = odl_meta_data.loc[0, 'odl_version_patch']
-    odl_date = odl_meta_data.loc[0, 'odl_version_patch_date']
-    major_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_MAJOR']
-    minor_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_MINOR']
-    patch_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION_PATCH']
-    dido_date = odl_meta_data.loc[0, 'dido_version_patch_date']
+    version_odl = odl_meta_data.loc[0, 'odl_version']
+    version_odl_date = odl_meta_data.loc[0, 'odl_version_date']
+    version_dido = supplier_config['config']['PARAMETERS']['DIDO_VERSION']
+    version_dido_date = \
+        supplier_config['config']['PARAMETERS']['DIDO_VERSION_DATE'] # odl_meta_data.loc[0, 'dido_version_date']
 
     # get today
     nu = datetime.now().strftime(dc.DATETIME_FORMAT)
@@ -763,18 +761,24 @@ def write_markdown_doc(project_name: str,
         outfile.write(f"# **Tabel: {supplier_id}: {project_name}**\n\n")
 
         outfile.write(f'This document was created at {nu}  \n')
-        outfile.write(f'Created by DiDo version: {major_dido}.{minor_dido}.{patch_dido} ({dido_date})  \n')
-        outfile.write(f'With ODL version: {major_odl}.{minor_odl}.{patch_odl} ({odl_date})\n\n')
+        outfile.write('Created by DiDo version: '
+                      f'{version_dido} ({version_dido_date})  \n')
+        outfile.write(f'With ODL version: {version_odl} '
+                      f'({version_odl_date})\n\n')
 
         prefix_text_label = f'{dc.TAG_PREFIX}_text'
-        if prefix_text_label in supplier_config.keys() and len(supplier_config[prefix_text_label]) > 0:
+        if prefix_text_label in supplier_config.keys() \
+            and len(supplier_config[prefix_text_label]) > 0:
+
             outfile.write(supplier_config[prefix_text_label] + '\n\n')
 
-        table_description: str = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['comment']
+        table_description: str = \
+            supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META]['comment']
         if len(table_description) == 0:
             table_description = 'DOKUMENTATIE ONTBREEKT!'
 
-        meta_data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
+        meta_data = \
+            supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
         if meta_data is None:
             logger.info('* no meta data available for %s', supplier_id)
 
@@ -829,7 +833,7 @@ def write_markdown_doc(project_name: str,
                     outfile.write(cell)
                     outfile.write(' | ')
 
-                # Yields an error message for each cell in that column, can be overwhelming
+                # Yields an error for each cell in that column, can be overwhelming
                 except Exception as e:
                     logger.error(f'Error occurred: {e.args[0]}')
                     logger.error(f'No info written for: {col}')
@@ -871,8 +875,11 @@ def write_markdown_doc(project_name: str,
 
         # check if additional markdown exists
         suffix_text_label = f'{dc.TAG_SUFFIX}_text'
-        if suffix_text_label in supplier_config.keys() and len(supplier_config[suffix_text_label]) > 0:
+        if suffix_text_label in supplier_config.keys() \
+            and len(supplier_config[suffix_text_label]) > 0:
+
             outfile.write('\n\n' + supplier_config[suffix_text_label] + '\n\n')
+        # if
 
     # with_meta_data (
 
@@ -1574,7 +1581,11 @@ def merge_meta_data_with_description(desc: pd.DataFrame, metadata: pd.DataFrame)
 ### merge_meta_data_with_description  ###
 
 
-def merge_meta_data_with_odl_data(config: dict, metadata: pd.DataFrame, metadata_data: pd.DataFrame):
+def merge_meta_data_with_odl_data(config: dict,
+                                  metadata: pd.DataFrame,
+                                  metadata_data: pd.DataFrame
+                                 ):
+
     """ Assigns default values tot metadata from ODL
 
     The ODL metadata table contains meta data for general use, especially
@@ -1593,35 +1604,33 @@ def merge_meta_data_with_odl_data(config: dict, metadata: pd.DataFrame, metadata
     Returns:
         pd.DataFrame: _description_metadata enhanced with ODL default values
     """
-    logger.debug('Assigning ODL metadata to empty cells in DiDo metadata (esp. version info)')
+    logger.debug('Assigning ODL metadata to empty cells in DiDo metadata')
 
     # first preset the DiDo version from parameters in the config dict
-    nu = datetime.now().strftime(dc.DATETIME_FORMAT)
-
-    for key in ['DIDO_VERSION_MAJOR', 'DIDO_VERSION_MINOR', 'DIDO_VERSION_PATCH']:
-        try:
-            value = str(dc.get_par_par(config, 'config', 'PARAMETERS', '')[key])
-            var = getattr(dc, key)
-            metadata.loc[0, var] = value
-            var = getattr(dc, key + '_DATE')
-            metadata.loc[0, var] = nu
-            logger.info(f'{key} copied from dido.yaml into meta data: {value}, {nu}')
-
-        except:
-            logger.warning('!!! Could not assign DiDo version numbers from dido.yaml')
-
-        # try..except
-    # for
+    # Get DiDo version from parameters in the config dict
+    key = 'DIDO_VERSION'
+    value = dc.get_par_par(config, 'config', 'PARAMETERS', '')[key]
+    metadata.loc[0, key.lower()] = value
+    key += '_DATE'
+    vdate = dc.get_par_par(config, 'config', 'PARAMETERS', '')[key]
+    metadata.loc[0, key.lower()] = vdate
+    logger.info('DiDo version copied from dido.yaml into meta data: '
+                f'{value}, {vdate}')
 
     for col in metadata_data.columns:
-        # only assign values if the column occurs in metadata_data and that column ain't empty
+        # only assign values if the column occurs in metadata_data
+        # and that column ain't empty
         if col in metadata.columns and len(str(metadata.loc[0, col])) == 0:
             logger.debug(f'{col}: {str(metadata.loc[0, col])}')
             metadata.loc[0, col] = metadata_data.loc[0, col]
 
-        # else not in log file
+        # when not, log it
         else:
             logger.debug(f'{col} not assigned')
+
+        # if
+
+    # for
 
     # return enhanced metada
     return metadata
