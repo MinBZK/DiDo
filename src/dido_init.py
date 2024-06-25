@@ -1,4 +1,4 @@
- os
+import os
 import re
 import sys
 import time
@@ -216,7 +216,7 @@ copy_template(dir_from, dir_to, values)
 
 # Copy delivery.yaml
 dir_from = os.path.join('config', template_delivery)
-dir_to = os.path.join(project_dir, 'root', 'data', 'delivery.yaml')
+dir_to = os.path.join(project_dir, 'config', 'delivery.yaml')
 copy_template(dir_from, dir_to, values)
 
 # Copy example schema file

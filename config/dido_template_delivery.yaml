@@ -1,13 +1,14 @@
 # Example suppliers
 DELIVERIES:
   {supplier}:
-    delivery_YYYY-{frequency}<integer>:
-      code-bronbestand: {code}
-      levering_leveringsdatum: YYYY-MM-DD
-      data_file: {project_name}
-      encoding: utf8
-      origin:
-        input: <file>
+    {project_name}:
+      delivery_YYYY-{frequency}<integer>:
+        code-bronbestand: {code}
+        levering_leveringsdatum: YYYY-MM-DD
+        data_file: {project_name}
+        encoding: utf8
+        origin:
+          input: <file>
 
 # Define which headers to process
 SUPPLIERS_TO_PROCESS: [{supplier}]
@@ -38,6 +39,12 @@ RENAME_DATA:
     pdirekt_example_date_column:    {{"re": True, "^00000000$":"29991231", "^0$": "29991231"}}
     pdirekt_example_integer_column: {{"re": True, "(.*)-": "-\\1"}}
     pdirekt_example_numeric_column: {{"re": True, "(.*)-": "-\\1"}}
+
+# Generate statistics
+STATISTICS:
+  shuttel:
+    columns: ['*']
+    max_categories: 50
 
 # Safety limitations
 LIMITS:
