@@ -773,7 +773,8 @@ def read_delivery_config(project_path: str,
         with open(delivery_filename, encoding = 'utf8', mode = "r") as infile:
             delivery = yaml.safe_load(infile)
 
-    except:
+    except Exception as err:
+        logger.critical('*** ' + str(err))
         raise DiDoError(f'*** Delivery file not found: {delivery_filename}')
 
     return delivery
@@ -801,7 +802,7 @@ def load_credentials(project_dir: str) -> dict:
 
     else:
         # initialize empty env dictionary
-        logger.info('No credentials file found: config/.env')
+        logger.debug('No credentials file found: config/.env')
 
         env = {}
 

@@ -3,7 +3,7 @@ DELIVERIES:
   {supplier}:
     {project_name}:
       delivery_YYYY-{frequency}<integer>:
-        code-bronbestand: {code}
+        code_bronbestand: {code}
         levering_leveringsdatum: YYYY-MM-DD
         data_file: {project_name}
         encoding: utf8
@@ -42,7 +42,7 @@ RENAME_DATA:
 
 # Generate statistics
 STATISTICS:
-  shuttel:
+  {supplier}:
     columns: ['*']
     max_categories: 50
 
