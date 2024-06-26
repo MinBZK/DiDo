@@ -3,7 +3,7 @@ Code bronbestand;{code}
 Created by; user
 Bronbestand beschrijving;DiDo {project_name}
 Bronbestand naamconventie;
-Bronbestand leverancier;{supplier_name}
+Bronbestand leverancier;{supplier}
 Bronbestand formaat;csv
 Bronbestand decimaal;{decimal}
 Bronbestand frequentielevering;{frequency}

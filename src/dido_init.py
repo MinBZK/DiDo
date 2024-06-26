@@ -121,17 +121,20 @@ if os.path.isfile(config_test_name):
 
 # create rudimentary config file
 project_name = os.path.basename(project_dir)
+pad, _, _ = dc.split_filename(project_dir)
+supplier = os.path.basename(pad)
 
+print(f'Supplier name is {supplier}')
 print(f'Project name is {project_name}')
-supplier = ''
-while supplier == '':
-    print('')
-    supplier_name = ask('Name of supplier', '')
-    supplier = dc.change_column_name(supplier_name)
-    supplier = supplier.replace('_', '')
-    print('Name used for supplier:', supplier)
+# project_name = ''
+# while project_name == '':
+#     print('')
+#     project_resp = ask('Name of project', '')
+#     project_name = dc.change_column_name(project_resp)
+#     project_name = supplier.replace('_', '')
+#     print('Name used for project:', project_name)
 
-# while
+# # while
 
 print('')
 dd = ask('Enter full path to data dictionary name when present', '')
@@ -157,7 +160,7 @@ freq = ask('Frequency of delivery', 'Q').upper()
 values = {'project_name': project_name,
           'root_dir': root_dir,
           'work_dir': work_dir,
-          'supplier_name': f'<{supplier_name}>',
+          'supplier_name': supplier,
           'code': code_bronbestand,
           'frequency': freq,
           'supplier': supplier,
