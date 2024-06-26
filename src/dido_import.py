@@ -1763,7 +1763,6 @@ def generate_statistics(data: pd.DataFrame,
     else:
         md += 'Table contains no deliveries  \n'
 
-
     logger.info('')
     logger.info('[Generating statistics]')
 
