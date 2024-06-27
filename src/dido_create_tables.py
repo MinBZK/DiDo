@@ -38,6 +38,8 @@ from dido_list import dido_list
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
+logger = logging.getLogger()
+
 ###############################################################################
 #
 # Fase 1 - Read and check the schema files
