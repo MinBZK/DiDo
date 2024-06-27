@@ -12,6 +12,8 @@ DEFAULT_SCHEMA_NAME = 'public'
 DEFAULT_SQL_USERNAME = ''
 DEFAULT_SQL_PASSWORD = ''
 
+logger = logging.getLogger()
+
 
 def create_sql_engine(host: str,
                       port: str,
@@ -34,7 +36,7 @@ def create_sql_engine(host: str,
         # peer id
         engine = sqlalchemy.create_engine(f'{prefix}/{database}')
 
-    return engine
+    return
 
 
 def dataframe_to_table(data_frame: pd.DataFrame,
@@ -298,64 +300,6 @@ def sql_statement(statement: str,
 
 ### sql_statement###
 
-'''
-def sql_statement_wrong(statement: str,
-                  verbose = True,
-                  sql_server_config: dict = None,
-                 ) -> pd.DataFrame:
-    """ Executes SQL statement. Does not return result, only
-        the number of rows affected.
-
-    Args:
-        statement (str): SQL statement to execute
-        verbose (bool): when True generates extra output. Defaults to True.
-        sql_server_config (dict, optional): dictionary containing the following keys:
-            Defaults to empty.
-
-    Raises:
-        ValueError: _description_
-
-    Returns:
-        pd.DataFrame: postgres table in pandas dataframe
-    """
-    host = sql_server_config.get('POSTGRES_HOST', DEFAULT_SQL_HOST)
-    port = sql_server_config.get('POSTGRES_PORT', DEFAULT_SQL_PORT)
-    database = sql_server_config.get('POSTGRES_DB', '* No default database *')
-    schema = sql_server_config.get('POSTGRES_SCHEMA', DEFAULT_SCHEMA_NAME)
-    username = sql_server_config.get('POSTGRES_USER', DEFAULT_SQL_USERNAME)
-    password = sql_server_config.get('POSTGRES_PW', DEFAULT_SQL_PASSWORD)
-
-    # Connect to an existing database
-    connection_string = f"host={host} dbname={database} user={username} password={password}"
-    connection = psycopg2.connect(connection_string)
-    try:
-        # Open a cursor to perform database operations
-        cursor = connection.cursor()
-
-        # Execute a command: this creates a new table
-        cursor.execute(statement)
-
-        # fetch the result
-        result = 0
-        try:
-            cursor.fetchall()
-            result = cursor.rowcount
-            colnames = [desc[0] for desc in cursor.description]
-
-        except:
-            pass
-
-        # Make the changes to the database persistent
-        connection.commit()
-
-        # Close communication with the database
-
-    finally:
-        cursor.close()
-        connection.close()
-
-    return result
-'''
 
 def row_count(statement: str,
                   verbose = True,
