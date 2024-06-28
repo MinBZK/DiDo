@@ -204,6 +204,38 @@ def delete_tables(table_names: list, servers: dict):
 ### delete_tables ###
 
 
+def kill_project_from_supplier(supplier: str,
+                               project: str,
+                               table_list: list,
+                               db_servers: dict):
+    # get all tables for leverancier
+    # when no tables, there is nothing more to do
+    if len(table_list) < 1:
+        logger.info('')
+        logger.info(f'No projects for {leverancier},')
+
+    else:
+        logger.info('')
+        logger.info(f'This will kill all data for project {project} '
+                    f'from supplier {supplier}')
+        prompt = 'Are you sure? (Ja/Nee): '
+
+        response = input(prompt)
+        logger.debug(f'{prompt}{response}')
+
+        if response != 'Ja':
+            logger.info(f'Opting to not destroy all data from {supplier}_{project}')
+            logger.info('')
+
+        else:
+            delete_tables(table_list, db_servers)
+            logger.info(f'Removed all tables for project: {supplier}_{project}')
+
+    return
+
+### kill_project_from_supplier ###
+
+
 def dido_kill(header: str):
     cpu = time.time()
 
@@ -219,28 +251,28 @@ def dido_kill(header: str):
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
-    odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    data_server_config = db_servers['DATA_SERVER_CONFIG']
-    foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
+    # odl_server_config = db_servers['ODL_SERVER_CONFIG']
+    # data_server_config = db_servers['DATA_SERVER_CONFIG']
+    # foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
-    report_periods = config_dict['REPORT_PERIODS']
+    # columns_to_write = config_dict['COLUMNS']
+    # report_periods = config_dict['REPORT_PERIODS']
     parameters = config_dict['PARAMETERS']
 
    # create the output file names
-    report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.csv')
-    report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
-    sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'remove-deliveries.sql')
+    # report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.csv')
+    # report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
+    # sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'remove-deliveries.sql')
 
     show_database('Tables are destroyed in the following database',
-                  data_server_config)
+                  db_servers['DATA_SERVER_CONFIG'])
     # if there is no supplier that received any supply, there is nothing to remove.
     # The program terminates
-    n_suppliers = fetch_suppliers(leveranciers, data_server_config)
+    n_suppliers = fetch_suppliers(leveranciers, db_servers['DATA_SERVER_CONFIG'])
     if len(n_suppliers) < 1:
         logger.info('')
         logger.warning('!!! No suppliers in config.yaml, DiDo quits')
@@ -277,28 +309,13 @@ def dido_kill(header: str):
         project_idx = 1,
     )
 
-    if len(table_list) < 1:
-        logger.info('')
-        logger.info(f'No projects for {leverancier}, DiDo quits.')
-
-        sys.exit()
-
     logger.info('The following projects and all of their data will be destroyed')
     for name in project_names:
         logger.info(f' - {name}')
 
-    logger.info('')
-    prompt = 'Are you sure to destroy all data (Ja/Nee): '
-    response = input(prompt)
-    logger.debug(f'{prompt}{response}')
+        kill_project_from_supplier(leverancier, name, table_list, db_servers)
 
-    if response != 'Ja':
-        logger.info('Opting to not destroy all data')
-        logger.info('')
-
-        sys.exit()
-
-    delete_tables(table_list, db_servers)
+    # for
 
     cpu = time.time() - cpu
     logger.info('')
