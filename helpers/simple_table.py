@@ -36,7 +36,7 @@ def create_sql_engine(host: str,
         # peer id
         engine = sqlalchemy.create_engine(f'{prefix}/{database}')
 
-    return
+    return engine
 
 
 def dataframe_to_table(data_frame: pd.DataFrame,
