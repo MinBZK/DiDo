@@ -247,26 +247,15 @@ def dido_kill(header: str):
     # read the configuration file
     config_dict = dc.read_config(args.project)
     supplier_to_be_killed = args.supplier
-    yes_to_all_questions = args.Yes
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
-    # odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    # data_server_config = db_servers['DATA_SERVER_CONFIG']
-    # foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
     root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    # columns_to_write = config_dict['COLUMNS']
-    # report_periods = config_dict['REPORT_PERIODS']
     parameters = config_dict['PARAMETERS']
-
-   # create the output file names
-    # report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.csv')
-    # report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
-    # sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'remove-deliveries.sql')
 
     show_database('Tables are destroyed in the following database',
                   db_servers['DATA_SERVER_CONFIG'])

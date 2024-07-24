@@ -468,7 +468,7 @@ def evaluate_headers(data: pd.DataFrame,
                 error = True
                 logger.error(f'Mode = mutate requires mutation_instructions')
 
-            else:
+            else:headers
                 # TODO: mutation columns are now prepended, allow the user to insert at desired positions
                 for i, name in enumerate(instruction_list):
                     schema_columns.insert(i, name)

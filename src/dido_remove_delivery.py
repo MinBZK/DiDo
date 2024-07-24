@@ -1,13 +1,8 @@
 import os
-import re
 import sys
-import json
 import time
-import locale
-from datetime import datetime
 import numpy as np
 import pandas as pd
-import sqlalchemy
 
 import dido_common as dc
 import simple_table as st
@@ -18,6 +13,10 @@ pd.set_option('display.width', 1000)
 
 # raise exceptions on all numpy warnings
 np.seterr(all='raise')
+
+# pylint: disable=bare-except, line-too-long, consider-using-enumerate
+# pylint: disable=logging-fstring-interpolation, too-many-locals
+# pylint: disable=pointless-string-statement, consider-using-dict-items
 
 
 def get_info(table_name: str, tables_name: dict, server_config: dict):
@@ -113,6 +112,19 @@ def display_leveranciers(project_name: str, leveranciers: dict, data_server_conf
     return leverancier_met_data
 
 
+def display_projects(leverancier: str, server_config):
+    schema = server_config['POSTGRES_SCHEMA']
+    sql = f"SELECT * FROM information_schema.tables "
+          f"WHERE table_schema = '{schema};'"
+
+    schema_table = st.sql_statement(sql, serverconfig)
+    projects = []
+
+
+
+
+
+
 def display_leveranties(leveranties: dict, supplier: str):
     """ Displays the supplies of of specific supplier
 
@@ -173,19 +185,14 @@ def dido_remove(header: str):
     foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
-    root_dir = config_dict['ROOT_DIR']
+    # project_name = config_dict['PROJECT_NAME']
+    # root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
-    parameters = config_dict['PARAMETERS']
-
-   # create the output file names
-    report_csv_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.csv')
-    report_doc_filename = os.path.join(work_dir, dc.DIR_DOCS, 'all-import-errors.md')
-    sql_filename        = os.path.join(work_dir, dc.DIR_SQL, 'remove-deliveries.sql')
+    # columns_to_write = config_dict['COLUMNS']
+    # table_desc = config_dict['TABLES']
+    # report_periods = config_dict['REPORT_PERIODS']
+    # parameters = config_dict['PARAMETERS']
 
     # if there is no supplier that received any supply, there is nothing to remove.
     # The program terminates
