@@ -512,7 +512,7 @@ def evaluate_headers(data: pd.DataFrame,
     # if
 
     if errors:
-        raise DiDoError('*** Serious problems in description of the data, DiDo cannot continue')
+        raise DiDoError('*** Serious problems in description of the data, DiDo will not continue')
 
     else:
         logger.info('[Provided header names are consistrent with schema]')
