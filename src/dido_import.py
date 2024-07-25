@@ -479,43 +479,20 @@ def evaluate_headers(data: pd.DataFrame,
         # if
     # if
 
-    # now they should be of equal length
-    errors = False
-    logger.info(f'Number of schema columns: {len(schema_columns)} vs. supplied headers: {len(header_columns)}')
+    # If header columns do not exist in schema columns (including misspelled columns)
+    result = set(header_columns) - set(schema_columns)
+    if result is not None:
+        print('Headers not found in schema: ' + str(result))
+        print('Header columns: ' + str(header_columns))
+        print('Schema columns: ' + str(schema_columns))
+        raise DiDoError('Data contains headers not found in schema')
 
-    # if not, examine what's wrong
-    if len(schema_columns) != len(header_columns): # + n_mutations:
-        errors = True
-        logger.error('Number of columns do not match')
-
-        logger.info('')
-        logger.info('*** Header columns not in schema:')
-        for col in header_columns:
-            if col not in schema_columns:
-                logger.info(col)
-
-        logger.info('')
-        logger.info('*** Data dictionary columns not in headers:')
-        for col in schema_columns:
-            if col not in header_columns:
-                logger.info(col)
-
-    else:
-        # if lengths are equal, column names should be as well
-        for i in range(len(header_columns)):
-            if schema_columns[i] != header_columns[i]:
-                errors = True
-                logger.error(f'*** schema column name, {schema_columns[i]}, '
-                             f'not equal to header column name: {header_columns[i]}')
-            # if
-        # for
-    # if
-
-    if errors:
-        raise DiDoError('*** Serious problems in description of the data, DiDo cannot continue')
-
-    else:
-        logger.info('[Provided header names are consistrent with schema]')
+    # if duplicate columns exist
+    # TODO: This will not be found as Pandas deals with duplicate columns separately
+    # TODO: Deal with duplicate headers before data is turned into pd.DataFrame
+    if len(set(header_columns)) < len(header_columns):
+        # duplicate columns exist, throw error
+        raise DiDoError('Duplicate columns found in headers')
 
     return header_columns
 
@@ -1900,22 +1877,22 @@ def create_markdown(data: pd.DataFrame,
     )
 
     # check if statistics should be generated
-    statistics = dc.get_par_par(supplier_config, 'delivery', 'STATISTICS', {})
-    if len(statistics) > 0:
-        # True, so add statistics to the markdown
-        md += generate_statistics(
-            data = data,
-            stat_config = statistics,
-            table = table,
-            data_schema = schema,
-            supplier_config = supplier_config,
-            supplier_id = supplier_id,
-        )
+    # statistics = dc.get_par_par(supplier_config, 'delivery', 'STATISTICS', {})
+    # if len(statistics) > 0:
+    #     # True, so add statistics to the markdown
+    #     md += generate_statistics(
+    #         data = data,
+    #         stat_config = statistics,
+    #         table = table,
+    #         data_schema = schema,
+    #         supplier_config = supplier_config,
+    #         supplier_id = supplier_id,
+    #     )
 
-    report_file.write(md)
+    # report_file.write(md)
 
-    with open(filename, 'w', encoding="utf8") as outfile:
-        outfile.write(md)
+    # with open(filename, 'w', encoding="utf8") as outfile:
+    #     outfile.write(md)
 
     # with
 
@@ -3880,7 +3857,7 @@ def dido_import(header: str):
                     )
 
                     if errors != 0:
-                        logger.error('*** Errors found during data prepartion. '
+                        logger.error('*** Errors found during data preparation. '
                                      'Data not imported.')
                         continue
                     # if
