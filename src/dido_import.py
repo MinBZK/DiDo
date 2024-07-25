@@ -55,7 +55,8 @@ def find_data_files(supplier_config, supplier_id: str, root_directory: str):
 
         # when data_file is specified it must contain something, if not: crash
         if len(data_file) == 0:
-            raise DiDoError('"data_file" specification in SUPPLIERS section is empty')
+            raise DiDoError('"data_file" specification in '
+                            'SUPPLIERS section is empty')
 
         server = ''
         server_path = ''
@@ -468,7 +469,7 @@ def evaluate_headers(data: pd.DataFrame,
                 error = True
                 logger.error(f'Mode = mutate requires mutation_instructions')
 
-            else:headers
+            else:
                 # TODO: mutation columns are now prepended, allow the user to insert at desired positions
                 for i, name in enumerate(instruction_list):
                     schema_columns.insert(i, name)
@@ -512,7 +513,7 @@ def evaluate_headers(data: pd.DataFrame,
     # if
 
     if errors:
-        raise DiDoError('*** Serious problems in description of the data, DiDo cannot continue')
+        raise DiDoError('*** Serious problems in description of the data, DiDo will not continue')
 
     else:
         logger.info('[Provided header names are consistrent with schema]')
