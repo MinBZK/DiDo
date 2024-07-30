@@ -1887,22 +1887,22 @@ def create_markdown(data: pd.DataFrame,
     )
 
     # check if statistics should be generated
-    # statistics = dc.get_par_par(supplier_config, 'delivery', 'STATISTICS', {})
-    # if len(statistics) > 0:
-    #     # True, so add statistics to the markdown
-    #     md += generate_statistics(
-    #         data = data,
-    #         stat_config = statistics,
-    #         table = table,
-    #         data_schema = schema,
-    #         supplier_config = supplier_config,
-    #         supplier_id = supplier_id,
-    #     )
+    statistics = dc.get_par_par(supplier_config, 'delivery', 'STATISTICS', {})
+    if len(statistics) > 0:
+        # True, so add statistics to the markdown
+        md += generate_statistics(
+            data = data,
+            stat_config = statistics,
+            table = table,
+            data_schema = schema,
+            supplier_config = supplier_config,
+            supplier_id = supplier_id,
+        )
 
-    # report_file.write(md)
+    report_file.write(md)
 
-    # with open(filename, 'w', encoding="utf8") as outfile:
-    #     outfile.write(md)
+    with open(filename, 'w', encoding="utf8") as outfile:
+        outfile.write(md)
 
     # with
 
