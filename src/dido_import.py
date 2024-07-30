@@ -308,7 +308,7 @@ def load_data(supplier_config: dict,
             nrows = sample_size,
             engine = 'c',
             encoding = encoding,
-        )
+        )        
 
     else:
         logger.info('Reading with headers')
@@ -322,6 +322,16 @@ def load_data(supplier_config: dict,
                 engine = 'c',
                 encoding = encoding,
             )
+            
+            # Check for duplicate columns, Pandas appends .1 to duplicately-named columns. 
+            # Use range(1,100) to find potentially duplicate column names (up to 100 duplicates)
+            duplicate_cols = [col for col in data.columns.values if any(col.endswith(f'.{i}') for i in range(1,100))]
+            if len(duplicate_cols) > 0:
+                logger.info('WARNING - Potential duplicated column names detected: ' + str(duplicate_cols))
+                original_cols = [col for col in data.columns.values if col not in duplicate_cols]
+                logger.info('Non-duplicated column names: ' + str(original_cols))
+
+                
         except pd.errors.ParserError as err:
             raise DiDoError(str(err))
 
@@ -480,43 +490,21 @@ def evaluate_headers(data: pd.DataFrame,
         # if
     # if
 
-    # now they should be of equal length
-    errors = False
-    logger.info(f'Number of schema columns: {len(schema_columns)} vs. supplied headers: {len(header_columns)}')
 
-    # if not, examine what's wrong
-    if len(schema_columns) != len(header_columns): # + n_mutations:
-        errors = True
-        logger.error('Number of columns do not match')
+    # If header columns do not exist in schema columns (including misspelled columns)
+    result = set(header_columns) - set(schema_columns)
+    if result is not None:
+        print('Headers not found in schema: ' + str(result))
+        print('Header columns: ' + str(header_columns))
+        print('Schema columns: ' + str(schema_columns))
+        raise DiDoError('Data contains headers not found in schema')
 
-        logger.info('')
-        logger.info('*** Header columns not in schema:')
-        for col in header_columns:
-            if col not in schema_columns:
-                logger.info(col)
-
-        logger.info('')
-        logger.info('*** Data dictionary columns not in headers:')
-        for col in schema_columns:
-            if col not in header_columns:
-                logger.info(col)
-
-    else:
-        # if lengths are equal, column names should be as well
-        for i in range(len(header_columns)):
-            if schema_columns[i] != header_columns[i]:
-                errors = True
-                logger.error(f'*** schema column name, {schema_columns[i]}, '
-                             f'not equal to header column name: {header_columns[i]}')
-            # if
-        # for
-    # if
-
-    if errors:
-        raise DiDoError('*** Serious problems in description of the data, DiDo will not continue')
-
-    else:
-        logger.info('[Provided header names are consistrent with schema]')
+    # if duplicate columns exist
+    # TODO: This will not be found as Pandas deals with duplicate columns separately
+    # TODO: Deal with duplicate headers before data is turned into pd.DataFrame
+    if len(set(header_columns)) < len(header_columns):
+        # duplicate columns exist, throw error
+        raise DiDoError('Duplicate columns found in headers')
 
     return header_columns
 
@@ -3881,7 +3869,7 @@ def dido_import(header: str):
                     )
 
                     if errors != 0:
-                        logger.error('*** Errors found during data prepartion. '
+                        logger.error('*** Errors found during data preparation. '
                                      'Data not imported.')
                         continue
                     # if

@@ -145,7 +145,9 @@ code_bronbestand = supplier.upper() + '_' + project_name.upper()
 schema_filename = 'bronbestand_' + supplier.lower() + '_' + project_name.lower()
 
 print('')
-decimal = ask('Decimal character, point (.) or (,)', '.')
+# decimal = ask('Decimal character, point (.) or (,)', '.')
+## Suggested rewording for clarity, it wasn't immediately clear to me what this was asking
+decimal = ask('Is the source data decimal character a period (.) or a comma (,)? (Commas will be converted to periods in the DWH)','.')
 print('Frequency of deliveries')
 print(' J - Yearly')
 print(' H - Half yearly')
