@@ -493,7 +493,7 @@ def evaluate_headers(data: pd.DataFrame,
 
     # If header columns do not exist in schema columns (including misspelled columns)
     result = set(header_columns) - set(schema_columns)
-    if result is not None:
+    if len(result) > 0:
         print('Headers not found in schema: ' + str(result))
         print('Header columns: ' + str(header_columns))
         print('Schema columns: ' + str(schema_columns))
