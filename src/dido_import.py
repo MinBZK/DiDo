@@ -307,7 +307,7 @@ def load_data(supplier_config: dict,
             nrows = sample_size,
             engine = 'c',
             encoding = encoding,
-        )
+        )        
 
     else:
         logger.info('Reading with headers')
@@ -321,6 +321,16 @@ def load_data(supplier_config: dict,
                 engine = 'c',
                 encoding = encoding,
             )
+            
+            # Check for duplicate columns, Pandas appends .1 to duplicately-named columns. 
+            # Use range(1,100) to find potentially duplicate column names (up to 100 duplicates)
+            duplicate_cols = [col for col in data.columns.values if any(col.endswith(f'.{i}') for i in range(1,100))]
+            if len(duplicate_cols) > 0:
+                logger.info('WARNING - Potential duplicated column names detected: ' + str(duplicate_cols))
+                original_cols = [col for col in data.columns.values if col not in duplicate_cols]
+                logger.info('Non-duplicated column names: ' + str(original_cols))
+
+                
         except pd.errors.ParserError as err:
             raise DiDoError(str(err))
 
