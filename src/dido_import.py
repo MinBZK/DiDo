@@ -55,7 +55,8 @@ def find_data_files(supplier_config, supplier_id: str, root_directory: str):
 
         # when data_file is specified it must contain something, if not: crash
         if len(data_file) == 0:
-            raise DiDoError('"data_file" specification in SUPPLIERS section is empty')
+            raise DiDoError('"data_file" specification in '
+                            'SUPPLIERS section is empty')
 
         server = ''
         server_path = ''
@@ -488,6 +489,7 @@ def evaluate_headers(data: pd.DataFrame,
             # if
         # if
     # if
+
 
     # If header columns do not exist in schema columns (including misspelled columns)
     result = set(header_columns) - set(schema_columns)

@@ -233,7 +233,7 @@ def sql_select(table_name: str = '',
     # when repeatedly called. Wrap in with statement to work miracles
     with engine.connect() as connection:
         query_result = pd.read_sql_query(con = connection, # engine.connect(),
-                                        sql = sqlalchemy.text(sql_query))
+                                         sql = sqlalchemy.text(sql_query))
 
 
     return query_result
