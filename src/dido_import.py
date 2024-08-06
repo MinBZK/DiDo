@@ -2582,6 +2582,11 @@ def key_exists(table_name: str,
         bool: True, value exists, False if not
     """
     schema = server_config['POSTGRES_SCHEMA']
+    description = table_name.rpartition('_')[0] + '_description'
+    description_table = st.table_to_dataframe(description, sql_server_config=server_config)
+    description_table = description_table.set_index('kolomnaam')
+    if description_table.loc[mutation_key, 'datatype'] == 'text':
+        value = "'" + value + "'"
     where = f'{mutation_key} = {value}'
     if delete:
         where += f" AND {dc.ODL_DATUM_EINDE} = '"
@@ -3249,15 +3254,15 @@ def process_table(tablename: str,
         # error_report = convert_errors_to_dataframe(report, messages, error_codes, total_errors)
 
         # write errors to file
-        create_markdown(
-            report = error_report,
-            pakbon_record = pakbon_record,
-            project_name = project_name,
-            supplier_config = supplier_config,
-            supplier_id = supplier_data_schema,
-            report_file = doc_file,
-            filename = single_doc_name
-        )
+        # create_markdown(
+        #     report = error_report,
+        #     pakbon_record = pakbon_record,
+        #     project_name = project_name,
+        #     supplier_config = supplier_config,
+        #     supplier_id = supplier_data_schema,
+        #     report_file = doc_file,
+        #     filename = single_doc_name
+        # )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
@@ -3392,18 +3397,18 @@ def process_file(filename: str,
         )
 
         # write errors to file
-        create_markdown(
-            data = data,
-            table = tables_name[dc.TAG_TABLE_SCHEMA],
-            schema = supplier_data_schema,
-            report = error_report,
-            pakbon_record = pakbon_record,
-            project_name = project_name,
-            supplier_config = supplier_config,
-            supplier_id = supplier_id,
-            report_file = doc_file,
-            filename = single_doc_name,
-        )
+        # create_markdown(
+        #     data = data,
+        #     table = tables_name[dc.TAG_TABLE_SCHEMA],
+        #     schema = supplier_data_schema,
+        #     report = error_report,
+        #     pakbon_record = pakbon_record,
+        #     project_name = project_name,
+        #     supplier_config = supplier_config,
+        #     supplier_id = supplier_id,
+        #     report_file = doc_file,
+        #     filename = single_doc_name,
+        # )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL

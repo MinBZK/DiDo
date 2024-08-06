@@ -423,7 +423,7 @@ def get_par_par(config: dict, key_1: str, key_2: str, default = None):
    value inside that dictionary. When either is not found default is returned
 
     Args:
-        config (dict): dictuionary or DataFrame to fetch the value from
+        config (dict): dictionary or DataFrame to fetch the value from
         key_1 (str): value to find in config
         key_2 (str): value to find in config[key_1]
         default (_type_, optional): default when value is not in dict. Defaults to None.
