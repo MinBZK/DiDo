@@ -1071,6 +1071,218 @@ def get_table_names(project_name: str, supplier: str, postfix: str = 'data') -> 
 ### get_table_names ###
 
 
+def get_suppliers(config_dict: dict) -> dict:
+    """ Returns all suppliers and their products from config.yaml
+
+    Args:
+        config_dict (dict): the SUPPLIERS part from config.yaml
+
+    Returns:
+        dict: dictionary of suppliers and for each supplier a dictionary
+            with the projects
+    """
+    suppliers_dict = dict()
+    for supplier_name, projects in config_dict.items():
+        current_supplier = dict()
+        for project_name, value in projects.items():
+            current_supplier[project_name] = dict()
+
+        suppliers_dict[supplier_name] = current_supplier
+
+    # for
+
+    return suppliers_dict
+
+### get_suppliers ###
+
+
+def add_deliveries_to_suppliers(suppliers_dict: dict, delivery_dict: dict) -> dict:
+    """ Adds a dictionary with deliveries to each project in the suppliers_dict
+
+    Args:
+        suppliers_dict (dict): dictionary with suppliers and projects
+        delivery_dict (dict): the DELIVERIES part of delivery.yaml
+
+    Raises:
+        dc.DidoError: when delivery.yaml contains suppliers or projects
+            not in config.yaml an exception is raised
+
+
+    Returns:
+        dict: a dictionary with delivery information added to each project
+            in suppliers_dict
+    """
+    errors = False
+    # consistency check 1: all delivery suppliers should be known in suppliers_dict
+    for delivery_supplier, _ in delivery_dict.items():
+        if delivery_supplier not in suppliers_dict.keys():
+            errors = True
+            logger.error(f'*** Supplier in delivery ({delivery_supplier}) '
+                         'is not known among the suppliers in "config.yaml"')
+
+    # consistency check 2: all delivery projects should be known in suppliers_dict
+    for delivery_name, delivery_supplier in delivery_dict.items():
+        for delivery_project, _ in delivery_supplier.items():
+            if delivery_project not in suppliers_dict[delivery_name].keys():
+                errors = True
+                logger.error(f'*** Project in delivery ({delivery_project}) '
+                            'is not known among the projects in "config.yaml"')
+
+    if errors:
+        raise dc.DidoError('*** DiDo cannot continue with these errors')
+
+
+    # add delivery info to supplier info
+    for supplier_name, _ in delivery_dict.items():
+        for project_name, deliveries in delivery_supplier.items():
+            # add existing tables names
+            tables_dict = dict()
+
+            # for all data tables
+            table_data = get_table_names(project_name, supplier_name, 'data')
+            for key, value in table_data.items():
+                tables_dict[key] = value
+
+            # and all description tables
+            # table_data = get_data_table_names(project_name, supplier_name, 'description')
+            # for key, value in table_data.items():
+            #     tables_dict[key] = value
+
+            suppliers_dict[supplier_name][project_name] \
+                ['tables_def'] = tables_dict
+
+            # add all deliveries
+            all_deliveries = dict()
+            for delivery_name, delivery_info in deliveries.items():
+                # remove 'delivery_' from delivery_name
+                if delivery_name.startswith('delivery_'):
+                    delivery_id = delivery_name[len('delivery_'):]
+                else:
+                    delivery_id = delivery_name
+
+                all_deliveries[delivery_id] = -1
+
+            suppliers_dict[supplier_name][project_name] \
+                ['deliveries_def'] = all_deliveries
+
+            # for
+        # for
+    # for
+
+    return suppliers_dict
+
+### add_deliveries_to_suppliers ###
+
+
+def add_table_info_to_deliveries(suppliers_dict: dict, server_config: dict):
+    """ Fetches table info from the database and adds it to the suppliers dict
+
+    Args:
+        suppliers_dict (dict): contains suppliers, projects and dlivery defs
+            from delivery.yaml
+        server_config (dict): definition of server to fetch table info from
+
+    Returns:
+        _type_: suppliers_dict enhanced with delivery information from the database
+    """
+    for supplier_name, projects in suppliers_dict.items():
+        for project_name in projects.keys():
+
+            # get information for each project for each supplier
+            table_names = get_table_names(project_name, supplier_name, 'data')
+            tables = {}
+
+            # collect information for each table
+            for key in table_names.keys():
+                info = get_table_info(table_names[key], table_names, server_config)
+                tables[key] = info
+
+            # for
+
+            suppliers_dict[supplier_name][project_name]['tables_found'] = tables
+
+            # iterate over all deliveries found in the database and build
+            # dictionary out of it
+            deliveries_found = {}
+            delivs = tables[TAG_TABLE_SCHEMA]['deliveries']
+            if delivs is not None:
+                for row in delivs.iterrows():
+                    info = row[1]
+                    delivery_id = info['levering_rapportageperiode']
+                    count = info['count']
+                    deliveries_found[delivery_id] = count
+
+                # for
+            # if
+
+            # assign delivery dictionary to suppliers_dict
+            suppliers_dict[supplier_name][project_name]['deliveries_found'] = deliveries_found
+
+        # for
+
+    # for
+
+    return suppliers_dict
+
+### add_table_info_to_deliveries ###
+
+
+def get_table_info(table_name: str, tables_name: dict, server_config: dict):
+    """ Requests info of a specific dido table
+
+    Args:
+        table_name (str): Name of the table to request info on
+        tables_name (dict): Dict of all possible table names
+        server_config (dict): Server configuration for the database
+
+    Returns:
+        _type_: _description_
+    """
+    # Initialize info record
+    info = {'table': table_name,
+            'exists': True,
+            'records': 0,
+            'deliveries': None,
+        }
+
+    try:
+        query_result = st.sql_select(
+            table_name = table_name,
+            columns = 'count(*)',
+            verbose = False,
+            sql_server_config = server_config
+        )
+
+        info['records'] = query_result.iloc[0].loc['count']
+        if table_name == tables_name[TAG_TABLE_SCHEMA]:
+            query_result = st.sql_select(
+                table_name = table_name,
+                columns = 'DISTINCT levering_rapportageperiode, count(*) ',
+                groupby = 'levering_rapportageperiode ORDER BY levering_rapportageperiode',
+                verbose = False,
+                sql_server_config = server_config
+            )
+            if len(query_result) > 0:
+                info['deliveries'] = query_result
+
+        elif table_name == tables_name[TAG_TABLE_DELIVERY]:
+            query_result = st.sql_select(
+                table_name = table_name,
+                columns = 'DISTINCT levering_rapportageperiode',
+                verbose = False,
+                sql_server_config = server_config
+            )
+
+        # if
+
+    except sqlalchemy.exc.ProgrammingError:
+        info['exists'] = False
+
+    return info
+
+### get_table_info ###
+
+
 def get_supplier_projects(config: dict,
                           supplier: str,
                           delivery,
@@ -1112,6 +1324,57 @@ def get_supplier_projects(config: dict,
 ### get_supplier_dict ###
 
 
+def get_supplier_name(supplier_info: dict) -> str:
+    if supplier_info is None or len(supplier_info) == 0:
+        logger.error('*** dido_kill_project: there are no suppliers found')
+
+        return ''
+
+    # if
+
+    supplier_list = list(supplier_info.keys())
+    logger.info('Suppliers found:')
+    for supplier_name in supplier_list:
+        logger.info(f' - {supplier_name}')
+
+    supplier_name = ''
+    while supplier_name not in supplier_list:
+        supplier_name = \
+            input('Which supplier to select? (ctrl-C to exit): ')
+
+    # while
+
+    return supplier_name
+
+### get_supplier_name ###
+
+
+def get_project_name(supplier_info: dict, supplier_name: str) -> str:
+    projects = supplier_info[supplier_name]
+    if projects is None or len(projects) == 0:
+        logger.error(f'No projects found for {supplier_name}')
+
+        return ''
+
+    # if
+
+    project_list = list(supplier_info[supplier_name].keys())
+    logger.info(f'Projects found for {supplier_name}:')
+    for project_name in project_list:
+        logger.info(f' - {project_name}')
+
+    project_name = ''
+    while project_name not in project_list:
+        project_name = \
+            input('Which project to select from {suppolier_name}? (ctrl-C to exit): ')
+
+    # while
+
+    return project_name
+
+### get_project_name ###
+
+
 def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
     """ Returns supplier s info from supplier.
 
@@ -1136,6 +1399,70 @@ def enhance_cargo_dict(cargo_dict: dict, cargo_name, supplier_name: str):
     return cargo_dict
 
 ### get_supplier_dict ###
+
+
+def display_leveranties(leveranciers: dict):
+    """ Displays all supplies for all suppliers and all projects in
+        a user friendly way
+
+    Args:
+        leveranciers (dict): overview of suppliers, projects and deliveries
+    """
+    for leverancier_naam, leverancier_info in leveranciers.items():
+        logger.info(f'Supplier: {leverancier_naam}')
+        for project_name, project_info in leverancier_info.items():
+            logger.info(f'  Project: {project_name}')
+            if 'tables_found' in project_info.keys():
+                logger.info('')
+                logger.info('  Required Tables')
+                tables = project_info['tables_found']
+                table_count = 0
+                all_exist = True
+                for table, info in tables.items():
+                    n_delivs = 0
+                    exists = 'non-existent'
+                    if info['exists']:
+                        if info['deliveries'] is not None:
+                            n_delivs = len(info['deliveries'])
+                        else:
+                            n_delives = 0
+                    else:
+                        all_exist = False
+
+                    s = info["table"]
+                    logger.info(f'  - {s:<40s}' \
+                        f'{exists:>15s} ' \
+                        f'{info["records"]:12,d}')
+                # for
+
+                if not all_exist:
+                    logger.info(f'  * Not all required tables exist for ' \
+                        f'{project_name}, DiDo will not work for this project *')
+
+            # if
+
+            if 'deliveries_found' in project_info.keys():
+                logger.info('')
+                logger.info('  Deliveries')
+                deliveries = project_info['deliveries_found']
+                n = 0
+                for periode, telling in deliveries.items():
+                    n += 1
+                    logger.info(f'  - {periode:<10s} {telling:9d}')
+
+                if n == 0:
+                    logger.info(f'  * There are no deliveries for {project_name} *')
+
+            # if
+
+            logger.info('')
+
+        # for
+    # for
+
+    return
+
+### display_leveranties ###
 
 
 def get_cargo(cargo_config: dict, supplier: str, project_key: str):
@@ -1200,15 +1527,23 @@ def report_psql_use(table: str, servers: dict, tables_exist: bool, overwrite: bo
 ### report_psql_use ###
 
 
-def show_database(server_config: dict, table_name: str, pfun = logger.debug):
+def show_database(server_config: dict,
+                  table_name: str = '',
+                  pfun = logger.debug,
+                  title: str = '',
+                 ):
+
+    pfun('')
+    if len(title) > 0:
+        logger.info(title)
+    pfun(f'Server:   {server_config["POSTGRES_HOST"]}')
+    pfun(f'Port:     {server_config["POSTGRES_PORT"]}')
+    pfun(f'Database: {server_config["POSTGRES_DB"]}')
+    pfun(f'Schema:   {server_config["POSTGRES_SCHEMA"]}')
+    pfun(f'User:     {server_config["POSTGRES_USER"]}')
+    pfun('')
     if len(table_name) > 0:
         pfun(f'Table:    {table_name}')
-        pfun('')
-
-    pfun(f'Host:     {server_config["POSTGRES_HOST"]}')
-    pfun(f'Database: {server_config["POSTGRES_DB"]}')
-    pfun(f'Port:     {server_config["POSTGRES_PORT"]}')
-    pfun(f'Schema:   {server_config["POSTGRES_SCHEMA"]}')
 
     return
 
@@ -1248,7 +1583,12 @@ def delivery_exists(delivery: dict,
         )
     except sqlalchemy.exc.ProgrammingError:
         logging.critical(f'*** Tables do not exist for {supplier_id}_{project_name}_...')
-        show_database(server_config, table_name, logger.info)
+        show_database(
+            server_config = server_config,
+            table_name = table_name,
+            pfun = logger.info,
+            title = '',
+        )
         raise DiDoError('Error while fetching tables. Did you ever apply create_tables '
                         f'for {supplier_id}_{project_name}?')
 
@@ -1256,7 +1596,12 @@ def delivery_exists(delivery: dict,
 
     leveringen_lijst = leveringen[ODL_LEVERING_FREK].tolist()
     if len(leveringen_lijst) > 0:
-        show_database(server_config, table_name, logger.debug)
+        show_database(
+            server_config = server_config,
+            table_name = table_name,
+            pfun = logger.debug,
+            title = '',
+        )
         logger.debug(f'Deliveries present in the database: {leveringen_lijst}')
 
     # if

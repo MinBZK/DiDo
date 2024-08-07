@@ -313,8 +313,10 @@ def load_data(supplier_config: dict,
     else:
         logger.info('Reading with headers')
         try:
+            print(pd.__version__)
             data = pd.read_csv(
                 filename,
+                # mangle_dupe_cols = False,
                 sep = delimiter,
                 dtype = str,
                 keep_default_na = False,
