@@ -492,9 +492,9 @@ def evaluate_headers(data: pd.DataFrame,
 
 
     # If header columns do not exist in schema columns (including misspelled columns)
-    result = set(header_columns) - set(schema_columns)
-    if result is not None:
-        print('Headers not found in schema: ' + str(result))
+    extra_headers = set(header_columns) - set(schema_columns)
+    if len(extra_headers) > 0:
+        print('Headers not found in schema: ' + str(extra_headers))
         print('Header columns: ' + str(header_columns))
         print('Schema columns: ' + str(schema_columns))
         raise DiDoError('Data contains headers not found in schema')
@@ -643,11 +643,17 @@ def process_renames(data: pd.DataFrame,
                     # "normal" column, add to dictionary
                     rename_dict[col_name] = cols[col]
 
+                    # TODO: fix unassigned variable col_name
+                    # rename_dict[new_col] = cols[col]
+
                 # if
 
             else:
                 # "normal" column, add to dictionary
                 rename_dict[col_name] = cols[col]
+
+                # TODO: fix unassigned variable col_name
+                # rename_dict[new_col] = cols[col]
 
             # if
         # for
@@ -1087,8 +1093,8 @@ def check_type(data: pd.DataFrame,
     # if
 
     if total_errors > max_errors:
-        raise DiDoError(f'Maximum number of check_type errors {max_errors} '
-                        f'exceeded for column {column}. Checking of errors stopped')
+        raise DiDoError(f'Maximum number of check_type errors ({max_errors}) '
+                        f'exceeded for column [{column}]. Checking of errors stopped')
 
     return report, total_errors
 
@@ -1766,7 +1772,7 @@ def generate_statistics(data: pd.DataFrame,
     max_categories = dc.get_par(stat_supplier, 'max_categories', 50)
     columns = dc.get_par(stat_supplier, 'columns', '')
     if columns == ['*']:
-        columns = data_schema.index.tolist()
+        columns = data.columns.tolist()
 
 
     # Iterate over all columns
@@ -1825,7 +1831,7 @@ def generate_statistics(data: pd.DataFrame,
 
             # for
 
-            logger.info(f'Statistics for computed for {col_name}')
+            logger.info(f'Statistics computed for {col_name}')
 
         # if
 
@@ -2576,6 +2582,11 @@ def key_exists(table_name: str,
         bool: True, value exists, False if not
     """
     schema = server_config['POSTGRES_SCHEMA']
+    description = table_name.rpartition('_')[0] + '_description'
+    description_table = st.table_to_dataframe(description, sql_server_config=server_config)
+    description_table = description_table.set_index('kolomnaam')
+    if description_table.loc[mutation_key, 'datatype'] == 'text':
+        value = "'" + value + "'"
     where = f'{mutation_key} = {value}'
     if delete:
         where += f" AND {dc.ODL_DATUM_EINDE} = '"
@@ -3243,15 +3254,15 @@ def process_table(tablename: str,
         # error_report = convert_errors_to_dataframe(report, messages, error_codes, total_errors)
 
         # write errors to file
-        create_markdown(
-            report = error_report,
-            pakbon_record = pakbon_record,
-            project_name = project_name,
-            supplier_config = supplier_config,
-            supplier_id = supplier_data_schema,
-            report_file = doc_file,
-            filename = single_doc_name
-        )
+        # create_markdown(
+        #     report = error_report,
+        #     pakbon_record = pakbon_record,
+        #     project_name = project_name,
+        #     supplier_config = supplier_config,
+        #     supplier_id = supplier_data_schema,
+        #     report_file = doc_file,
+        #     filename = single_doc_name
+        # )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
@@ -3386,18 +3397,18 @@ def process_file(filename: str,
         )
 
         # write errors to file
-        create_markdown(
-            data = data,
-            table = tables_name[dc.TAG_TABLE_SCHEMA],
-            schema = supplier_data_schema,
-            report = error_report,
-            pakbon_record = pakbon_record,
-            project_name = project_name,
-            supplier_config = supplier_config,
-            supplier_id = supplier_id,
-            report_file = doc_file,
-            filename = single_doc_name,
-        )
+        # create_markdown(
+        #     data = data,
+        #     table = tables_name[dc.TAG_TABLE_SCHEMA],
+        #     schema = supplier_data_schema,
+        #     report = error_report,
+        #     pakbon_record = pakbon_record,
+        #     project_name = project_name,
+        #     supplier_config = supplier_config,
+        #     supplier_id = supplier_id,
+        #     report_file = doc_file,
+        #     filename = single_doc_name,
+        # )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
