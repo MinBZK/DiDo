@@ -1518,7 +1518,7 @@ def report_psql_use(table: str, servers: dict, tables_exist: bool, overwrite: bo
 
         else:
             logger.error('*** If you really want to recreate these tables, thereby erasing current contents')
-            logger.error('*** run dido_kill_supplier.py ***')
+            logger.error('*** run dido_kill_project.py ***')
 
     logger.info('')
 
