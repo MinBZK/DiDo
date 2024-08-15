@@ -463,6 +463,7 @@ def read_cli():
     argParser.add_argument("-d", "--delivery",
                            help="Name of delivery file in root/data directory")
     argParser.add_argument("--date", help="Date to take snapshot of database ")
+    argParser.add_argument("-m", "--modify", help="Path to existing table modifier")
     argParser.add_argument("-p", "--project", help="Path to project directory")
     argParser.add_argument("-r", "--reset",
                            help="Empties the logfile before writing it",

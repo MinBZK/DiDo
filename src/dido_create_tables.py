@@ -1006,6 +1006,7 @@ def write_sql(meta_data: pd.DataFrame,
                         overwrite = overwrite,
                         server_config = servers['DATA_SERVER_CONFIG'],
                         supplier_config = supplier_config,
+                        create_update = 'CREATE',
                     )
 
                     logger.info(f'  <file> {data_table_tag} (default)')
@@ -1021,6 +1022,143 @@ def write_sql(meta_data: pd.DataFrame,
     return
 
 ### write_sql ###
+
+
+def modify_sql(meta_data: pd.DataFrame,
+              supplier_config: dict,
+              supplier_id: str,
+              project_config: dict,
+              project_name: str,
+              overwrite: bool,
+              servers: dict,
+              sql_filename: str,
+             ):
+    # TODO: update description
+    # """ Iterate over all elements in table and creates a data description
+
+    # When a data DataFrame is passed the table itself will be created and the
+    # data will be stored into the table.
+
+    # Args:
+    #     sql_filename -- name of the file to write DDL onto
+    #     tables -- table names as key and per table name points to additional information
+    #     template -- bronbestand_attribuut_meta.csv has column info for create_table_description
+    #     postgres_schema -- table schema name
+    # """
+    postgres_schema = servers['DATA_SERVER_CONFIG']['POSTGRES_SCHEMA']
+
+    logger.info('')
+    logger.info(f'[Writing SQL - Modifying table]')
+    logger.info(f'>> Writing {supplier_id}')
+
+    with open(sql_filename, encoding="utf8", mode='a') as outfile:
+
+        # get the meta data, they are needed for saome operations
+        for table_type in supplier_config[dc.TAG_TABLES]:
+
+            # get schema file
+            schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_SCHEMA]
+
+            # schema = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_TABLE_SCHEMA]
+            data = supplier_config[dc.TAG_TABLES][table_type][dc.TAG_DATA]
+
+            # id data is not a dataframe, there is no data at all
+            if not isinstance(data, pd.DataFrame):
+                data = None
+
+            # define the prototypical table name
+            table_name = dc.get_table_name(project_name, supplier_id, table_type, '')
+
+            # create SQL for the description table
+            if supplier_config[dc.TAG_TABLES][table_type]['create_description']:
+                description_tag = table_name + dc.TAG_DESC
+                sql_code = create_table_description(
+                    supplier_config = supplier_config,
+                    table_type = table_type,
+                    template = meta_data,
+                    schema_name = postgres_schema,
+                    table_name = description_tag,
+                    overwrite = overwrite,
+                )
+
+                # define the data for the description
+                sql_data = create_table_input(schema, schema,
+                                                '',
+                                                postgres_schema,
+                                                description_tag)
+                sql_code += sql_data
+
+            # create the data table if create_data is True
+            if supplier_config[dc.TAG_TABLES][table_type]['create_data']:
+
+                data_table_tag = table_name + dc.TAG_DATA
+                # schema = supplier_config[dc.TAG_TABLES]['schema'][dc.TAG_TABLE_SCHEMA] = schema
+
+                # when meta, write the meta contents to the data table
+                data = None
+                if table_type == dc.TAG_TABLE_META:
+                    data = supplier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_DATA]
+
+                # when origin is omitted in config.yaml, supply the default (input: <file>)
+                if 'origin' in supplier_config:
+                    origin = supplier_config['origin']
+
+                else:
+                    origin = {'input': '<file>'}
+
+                if origin['input'] == '<table>' and table_type == dc.TAG_TABLE_SCHEMA:
+                    logger.info(f'  > Creating description for table schema: {data_table_tag}')
+                    if 'table_name' not in origin or origin['table_name'] == '':
+                        msg = 'No "table_name" was specified for origin in config.yaml'
+                        raise DiDoError(msg)
+
+                    if 'code_bronbestand' not in origin or origin['code_bronbestand'] == '':
+                        origin['code_bronbestand'] = meta_data.iloc[-1].loc['code_bronbestand']
+
+                    if 'levering_rapportageperiode' not in origin or origin['levering_rapportageperiode'] == '':
+                        olp = meta_data.iloc[-1].loc['bronbestand_datum_begin'][:4] + '-I'
+                        origin['levering_rapportageperiode'] = olp
+                        logger.warning(f'!Geen "levering rapportageperiode" in origin/config.yaml. {olp} verondersteld.')
+
+                    servers['FOREIGN_SERVER_CONFIG']['table'] = origin['table_name']
+                    servers['DATA_SERVER_CONFIG']['table'] = data_table_tag
+
+                    logger.info(f'Schema:\n{schema}')
+
+                    sql_code += use_existing_table(
+                        origin = origin,
+                        schema = schema,
+                        server_from = servers['FOREIGN_SERVER_CONFIG'],
+                        server_to = servers['DATA_SERVER_CONFIG'],
+                        odl_server = servers['ODL_SERVER_CONFIG'],
+                    )
+                    logger.info(f'  <table> {data_table_tag}')
+
+                else:
+                    sql_code += create_table(
+                        schema = schema,
+                        data = data,
+                        table_name = data_table_tag,
+                        project_name = project_name,
+                        overwrite = overwrite,
+                        server_config = servers['DATA_SERVER_CONFIG'],
+                        supplier_config = supplier_config,
+                        create_update = "UPDATE",
+                    )
+
+                    logger.info(f'  <file> {data_table_tag} (default)')
+
+                    # if
+                # if
+
+            outfile.write(sql_code)
+            outfile.write('\n\n')
+        # for -- tables
+    # with
+
+    return
+
+### modify_sql ###
 
 
 def test_for_existing_tables(supplier_id: str,
@@ -1298,6 +1436,7 @@ def create_table(schema: pd.DataFrame,
                  overwrite: bool,
                  server_config: dict,
                  supplier_config: dict,
+                 update_create: str,
                 ) -> str:
     """ Create a table in the database and fill with data
 
@@ -1359,7 +1498,9 @@ def create_table(schema: pd.DataFrame,
     if overwrite:
         tbd += f'DROP TABLE IF EXISTS {schema_name}.{table_name} CASCADE;\n\n'
 
-    tbd += f'CREATE TABLE {schema_name}.{table_name}\n(\n'
+    
+    # tbd += f'CREATE TABLE {schema_name}.{table_name}\n(\n'\
+    tbd += f'{update_create} TABLE {schema_name}.{table_name}\n(\n'
     tbd += data_types + '\n);\n\n'
     tbd += table_comment + comments + '\n\n'
 
@@ -1777,7 +1918,7 @@ def show_supplier_schemas(suppliers: dict):
 ### show_supplier_schemas ###
 
 
-def dido_begin(config_dict: dict):
+def dido_begin(config_dict: dict, modify=None):
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
     odl_server_config = db_servers['ODL_SERVER_CONFIG']
@@ -1970,7 +2111,7 @@ def dido_begin(config_dict: dict):
 ### dido_begin ###
 
 
-def dido_create(config_dict: dict):
+def dido_create(config_dict: dict, modify=None):
     """ generates markdown docs for wiki and SQL from schema and meta.
 
     Args:
@@ -2109,24 +2250,47 @@ def dido_create(config_dict: dict):
             # ).fillna('')
             # schema = leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_TABLE_SCHEMA] = schema
 
-            write_sql(
-                meta_data = meta_table,
-                supplier_config = leverancier_config,
-                supplier_id = leverancier_id,
-                project_config = project,
-                project_name = project_key,
-                overwrite = overwrite_tables,
-                servers = db_servers,
-                sql_filename = sql_filename,
-            )
+            #TODO:
+            # If in --modify mode, modify table instead of create table
+            if modify is not None:
+                modify_sql(
+                    meta_data = meta_table,
+                    supplier_config = leverancier_config,
+                    supplier_id = leverancier_id,
+                    project_config = project,
+                    project_name = project_key,
+                    overwrite = overwrite_tables,
+                    servers = db_servers,
+                    sql_filename = sql_filename,
+                )
 
-            # create documentation
-            write_markdown_doc(
-                project_name = project_key,
-                supplier_config = leverancier_config,
-                columns_to_write = write_columns,
-                doc_filename = doc_filename,
-            )
+                # create documentation
+                # modify_markdown_doc(
+                #     project_name = project_key,
+                #     supplier_config = leverancier_config,
+                #     columns_to_write = write_columns,
+                #     doc_filename = doc_filename,
+                # )
+
+            else:
+                write_sql(
+                    meta_data = meta_table,
+                    supplier_config = leverancier_config,
+                    supplier_id = leverancier_id,
+                    project_config = project,
+                    project_name = project_key,
+                    overwrite = overwrite_tables,
+                    servers = db_servers,
+                    sql_filename = sql_filename
+                )
+
+                # create documentation
+                write_markdown_doc(
+                    project_name = project_key,
+                    supplier_config = leverancier_config,
+                    columns_to_write = write_columns,
+                    doc_filename = doc_filename,
+                )
         # for -- project
     # for -- supplier
 
@@ -2159,7 +2323,7 @@ def main():
     dc.display_dido_header('Creating Tables and Documentation', config)
 
     # create the tables
-    dido_begin(config)
+    dido_begin(config, modify=args.modify)
     dido_create(config)
 
     # quit with goodbye message
