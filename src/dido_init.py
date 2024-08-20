@@ -20,6 +20,7 @@ work_dir = 'work'
 logs_dir = 'logs'
 data_dir = 'data'
 docs_dir = 'docs'
+sql_dir = 'sql'
 schemas_dir = 'schemas'
 
 cpu = time.time()
@@ -29,7 +30,6 @@ appname, args = dc.read_cli()
 
 # create project directories
 project_dir = args.project
-
 
 def copy_template(template: str, to: str, values):
     with open(template, encoding = 'utf8', mode = "r") as infile:
@@ -126,15 +126,6 @@ supplier = os.path.basename(pad)
 
 print(f'Supplier name is {supplier}')
 print(f'Project name is {project_name}')
-# project_name = ''
-# while project_name == '':
-#     print('')
-#     project_resp = ask('Name of project', '')
-#     project_name = dc.change_column_name(project_resp)
-#     project_name = supplier.replace('_', '')
-#     print('Name used for project:', project_name)
-
-# # while
 
 print('')
 dd = ask('Enter full path to data dictionary name when present', '')
@@ -184,7 +175,7 @@ for subdir in [config_dir, root_dir, work_dir, logs_dir]:
         print(f'file already exists: {dirname}')
 
 # Create the minimal root directories
-for subsubdir in [data_dir, docs_dir, schemas_dir]:
+for subsubdir in [data_dir, docs_dir, schemas_dir, sql_dir]:
     dirname = os.path.join(project_dir, root_dir, subsubdir)
     print(f' - {root_dir}/{subsubdir}')
 

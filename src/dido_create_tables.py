@@ -891,11 +891,11 @@ def write_markdown_doc(project_name: str,
 def write_sql(meta_data: pd.DataFrame,
               supplier_config: dict,
               supplier_id: str,
-              project_config: dict,
               project_name: str,
               overwrite: bool,
               servers: dict,
               sql_filename: str,
+              sql_script: str,
              ):
     """ Iterate over all elements in table and creates a data description
 
@@ -903,10 +903,22 @@ def write_sql(meta_data: pd.DataFrame,
     data will be stored into the table.
 
     Args:
-        sql_filename -- name of the file to write DDL onto
-        tables -- table names as key and per table name points to additional information
-        template -- bronbestand_attribuut_meta.csv has column info for create_table_description
-        postgres_schema -- table schema name
+        meta_data (pd.DataFrame): meta data for this supplier
+        supplier_config (dict): enhanced config dict for supplier
+        supplier_id (str): supplier name
+        project_name (str): project name
+        overwrite (bool): True if existing tables must be overwritten
+            Deletes all existing data !!
+        servers (dict): dictionary containing all servers
+        sql_filename (str): name of the file to write DDL onto
+        sql_script (str): custom SQL script to execute after tables have been
+            created
+
+    Raises:
+        DiDoError: Used when origin <table> is wrong
+
+    @TODO: Origin <table> has not been updated along with other code. \
+           This should be tested and probably repaired.
     """
     postgres_schema = servers['DATA_SERVER_CONFIG']['POSTGRES_SCHEMA']
 
@@ -969,6 +981,7 @@ def write_sql(meta_data: pd.DataFrame,
                 else:
                     origin = {'input': '<file>'}
 
+                # origing is <table>. Probably faulty
                 if origin['input'] == '<table>' and table_type == dc.TAG_TABLE_SCHEMA:
                     logger.info(f'  > Creating description for table schema: {data_table_tag}')
                     if 'table_name' not in origin or origin['table_name'] == '':
@@ -997,6 +1010,7 @@ def write_sql(meta_data: pd.DataFrame,
                     )
                     logger.info(f'  <table> {data_table_tag}')
 
+                # all other situations, mainly <input>
                 else:
                     sql_code += create_table(
                         schema = schema,
@@ -1010,8 +1024,15 @@ def write_sql(meta_data: pd.DataFrame,
 
                     logger.info(f'  <file> {data_table_tag} (default)')
 
-                    # if
                 # if
+
+            # if
+
+            # add custom SQL to sql_code when present
+            if sql_script is not None:
+                with open(sql_script, 'r') as infile:
+                    logging.info(f'Adding custom SQL code from {sql_script}')
+
 
             outfile.write(sql_code)
             outfile.write('\n\n')
@@ -2102,11 +2123,12 @@ def dido_create(config_dict: dict):
                 meta_data = meta_table,
                 supplier_config = leverancier_config,
                 supplier_id = leverancier_id,
-                project_config = project,
+                # project_config = project,
                 project_name = project_key,
                 overwrite = overwrite_tables,
                 servers = db_servers,
                 sql_filename = sql_filename,
+                sql_script = sql_script,
             )
 
             # create documentation
