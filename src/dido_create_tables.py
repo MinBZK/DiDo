@@ -2035,9 +2035,10 @@ def dido_create(config_dict: dict):
             keyword = 'SUPPLIERS',
         )
 
-        if len(projects) == 0:
-            projects = [project_name]
+        # Read custom SQL script for supplier, None when not present
+        sql_script = dc.get_par(config_dict, 'SQL_SCRIPT', None)
 
+        # Iterate over all projects
         for project_key in projects:
             dc.subheader(f'Project: {project_key}', '-')
             project = projects[project_key]
@@ -2096,18 +2097,6 @@ def dido_create(config_dict: dict):
             )
             leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_TABLE_META] = \
                 meta_table
-
-            # dir_load = os.path.join(work_dir, 'schemas', leverancier_id)
-            # source_file = project['schema_file'] + '.schema.csv'
-            # fname_schema_load = os.path.join(dir_load, source_file)
-            # schema = pd.read_csv(
-            #     fname_schema_load,
-            #     sep = ';',
-            #     dtype = str,
-            #     keep_default_na = False,
-            #     na_values = []
-            # ).fillna('')
-            # schema = leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_TABLE_SCHEMA] = schema
 
             write_sql(
                 meta_data = meta_table,
