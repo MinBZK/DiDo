@@ -3188,6 +3188,7 @@ def process_table(tablename: str,
                 single_sql_name: str,
                 server_configs: dict,
             ) -> int:
+
     """ Imports a table from another schema into current schema and
         embeds it in the DiDo functionality.
 
@@ -3251,16 +3252,16 @@ def process_table(tablename: str,
         )
         # error_report = convert_errors_to_dataframe(report, messages, error_codes, total_errors)
 
-        # write errors to file
-        # create_markdown(
-        #     report = error_report,
-        #     pakbon_record = pakbon_record,
-        #     project_name = project_name,
-        #     supplier_config = supplier_config,
-        #     supplier_id = supplier_data_schema,
-        #     report_file = doc_file,
-        #     filename = single_doc_name
-        # )
+        # write errors and documentation to file
+        create_markdown(
+            report = error_report,
+            pakbon_record = pakbon_record,
+            project_name = project_name,
+            supplier_config = supplier_config,
+            supplier_id = supplier_data_schema,
+            report_file = doc_file,
+            filename = single_doc_name
+        )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
@@ -3394,19 +3395,19 @@ def process_file(filename: str,
             max_errors = max_errors,
         )
 
-        # write errors to file
-        # create_markdown(
-        #     data = data,
-        #     table = tables_name[dc.TAG_TABLE_SCHEMA],
-        #     schema = supplier_data_schema,
-        #     report = error_report,
-        #     pakbon_record = pakbon_record,
-        #     project_name = project_name,
-        #     supplier_config = supplier_config,
-        #     supplier_id = supplier_id,
-        #     report_file = doc_file,
-        #     filename = single_doc_name,
-        # )
+        # write errors and documentation to file
+        create_markdown(
+            data = data,
+            table = tables_name[dc.TAG_TABLE_SCHEMA],
+            schema = supplier_data_schema,
+            report = error_report,
+            pakbon_record = pakbon_record,
+            project_name = project_name,
+            supplier_config = supplier_config,
+            supplier_id = supplier_id,
+            report_file = doc_file,
+            filename = single_doc_name,
+        )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
@@ -3859,7 +3860,7 @@ def dido_import(header: str):
 
                     # overwrite True, warn but continue
                     else:
-                        logger.warning('!!! ENFORCE_PREP_IF_TABLE_EXISTS: yes specified, '
+                        logger.warning('!!! ENFORCE_IMPORT_IF_TABLE_EXISTS: yes specified, '
                                     'data will be overwritten')
                     # if
                 # if
