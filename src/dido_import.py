@@ -308,12 +308,11 @@ def load_data(supplier_config: dict,
             nrows = sample_size,
             engine = 'c',
             encoding = encoding,
-        )        
+        )
 
     else:
         logger.info('Reading with headers')
         try:
-            print(pd.__version__)
             data = pd.read_csv(
                 filename,
                 # mangle_dupe_cols = False,
@@ -324,8 +323,8 @@ def load_data(supplier_config: dict,
                 engine = 'c',
                 encoding = encoding,
             )
-            
-            # Check for duplicate columns, Pandas appends .1 to duplicately-named columns. 
+
+            # Check for duplicate columns, Pandas appends .1 to duplicately-named columns.
             # Use range(1,100) to find potentially duplicate column names (up to 100 duplicates)
             duplicate_cols = [col for col in data.columns.values if any(col.endswith(f'.{i}') for i in range(1,100))]
             if len(duplicate_cols) > 0:
@@ -333,7 +332,7 @@ def load_data(supplier_config: dict,
                 original_cols = [col for col in data.columns.values if col not in duplicate_cols]
                 logger.info('Non-duplicated column names: ' + str(original_cols))
 
-                
+
         except pd.errors.ParserError as err:
             raise DiDoError(str(err))
 
@@ -496,9 +495,10 @@ def evaluate_headers(data: pd.DataFrame,
     # If header columns do not exist in schema columns (including misspelled columns)
     extra_headers = set(header_columns) - set(schema_columns)
     if len(extra_headers) > 0:
-        print('Headers not found in schema: ' + str(extra_headers))
-        print('Header columns: ' + str(header_columns))
-        print('Schema columns: ' + str(schema_columns))
+        logger.info('Headers not found in schema: ' + str(extra_headers))
+        logger.info('Header columns: ' + str(header_columns))
+        logger.info('Schema columns: ' + str(schema_columns))
+
         raise DiDoError('Data contains headers not found in schema')
 
     # if duplicate columns exist
@@ -1672,10 +1672,6 @@ def generate_statistics(data: pd.DataFrame,
             if db_freqs is not None:
                 db_freqs[var_name] = db_freqs[var_name].astype(str).str.replace('-', '')
                 db_freqs = db_freqs.set_index(var_name)
-
-            # if var_name == 'ovljjjj':
-            #     print(freqs)
-            #     print(db_freqs)
 
             txt += f'Distribution of {len(freqs)} categories for {var_name}  \n\n'
             txt += '| Category | Absolute | Delivery % | Database % |\n'
@@ -3192,6 +3188,7 @@ def process_table(tablename: str,
                 single_sql_name: str,
                 server_configs: dict,
             ) -> int:
+
     """ Imports a table from another schema into current schema and
         embeds it in the DiDo functionality.
 
@@ -3255,16 +3252,16 @@ def process_table(tablename: str,
         )
         # error_report = convert_errors_to_dataframe(report, messages, error_codes, total_errors)
 
-        # write errors to file
-        # create_markdown(
-        #     report = error_report,
-        #     pakbon_record = pakbon_record,
-        #     project_name = project_name,
-        #     supplier_config = supplier_config,
-        #     supplier_id = supplier_data_schema,
-        #     report_file = doc_file,
-        #     filename = single_doc_name
-        # )
+        # write errors and documentation to file
+        create_markdown(
+            report = error_report,
+            pakbon_record = pakbon_record,
+            project_name = project_name,
+            supplier_config = supplier_config,
+            supplier_id = supplier_data_schema,
+            report_file = doc_file,
+            filename = single_doc_name
+        )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
@@ -3398,19 +3395,19 @@ def process_file(filename: str,
             max_errors = max_errors,
         )
 
-        # write errors to file
-        # create_markdown(
-        #     data = data,
-        #     table = tables_name[dc.TAG_TABLE_SCHEMA],
-        #     schema = supplier_data_schema,
-        #     report = error_report,
-        #     pakbon_record = pakbon_record,
-        #     project_name = project_name,
-        #     supplier_config = supplier_config,
-        #     supplier_id = supplier_id,
-        #     report_file = doc_file,
-        #     filename = single_doc_name,
-        # )
+        # write errors and documentation to file
+        create_markdown(
+            data = data,
+            table = tables_name[dc.TAG_TABLE_SCHEMA],
+            schema = supplier_data_schema,
+            report = error_report,
+            pakbon_record = pakbon_record,
+            project_name = project_name,
+            supplier_config = supplier_config,
+            supplier_id = supplier_id,
+            report_file = doc_file,
+            filename = single_doc_name,
+        )
         create_csv_report(error_report, csv_file, single_csv_name)
 
         # write all modifications as SQL
@@ -3863,7 +3860,7 @@ def dido_import(header: str):
 
                     # overwrite True, warn but continue
                     else:
-                        logger.warning('!!! ENFORCE_PREP_IF_TABLE_EXISTS: yes specified, '
+                        logger.warning('!!! ENFORCE_IMPORT_IF_TABLE_EXISTS: yes specified, '
                                     'data will be overwritten')
                     # if
                 # if

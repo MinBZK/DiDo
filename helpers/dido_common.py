@@ -1606,6 +1606,10 @@ def delivery_exists(delivery: dict,
 
     # if
 
+    # test the format of of a delivery header
+    if not cargo_name.startswith('delivery_'):
+        raise DiDoError(f'Delevery header should start with "delivery_", is now: {cargo_name}')
+
     current_delivery = cargo_name.split('_')[1]
     exists = current_delivery in leveringen_lijst
     if exists:

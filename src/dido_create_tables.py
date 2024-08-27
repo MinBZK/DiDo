@@ -14,6 +14,7 @@ work directrory staat wordt altijd overschreven door dido_create_tables.
 """
 import os
 import sys
+import yaml
 import time
 import shutil
 import pandas as pd
@@ -891,11 +892,11 @@ def write_markdown_doc(project_name: str,
 def write_sql(meta_data: pd.DataFrame,
               supplier_config: dict,
               supplier_id: str,
-              project_config: dict,
               project_name: str,
               overwrite: bool,
               servers: dict,
               sql_filename: str,
+              sql_script: str,
              ):
     """ Iterate over all elements in table and creates a data description
 
@@ -903,10 +904,22 @@ def write_sql(meta_data: pd.DataFrame,
     data will be stored into the table.
 
     Args:
-        sql_filename -- name of the file to write DDL onto
-        tables -- table names as key and per table name points to additional information
-        template -- bronbestand_attribuut_meta.csv has column info for create_table_description
-        postgres_schema -- table schema name
+        meta_data (pd.DataFrame): meta data for this supplier
+        supplier_config (dict): enhanced config dict for supplier
+        supplier_id (str): supplier name
+        project_name (str): project name
+        overwrite (bool): True if existing tables must be overwritten
+            Deletes all existing data !!
+        servers (dict): dictionary containing all servers
+        sql_filename (str): name of the file to write DDL onto
+        sql_script (str): custom SQL script to execute after tables have been
+            created
+
+    Raises:
+        DiDoError: Used when origin <table> is wrong
+
+    @TODO: Origin <table> has not been updated along with other code. \
+           This should be tested and probably repaired.
     """
     postgres_schema = servers['DATA_SERVER_CONFIG']['POSTGRES_SCHEMA']
 
@@ -969,6 +982,7 @@ def write_sql(meta_data: pd.DataFrame,
                 else:
                     origin = {'input': '<file>'}
 
+                # origing is <table>. Probably faulty
                 if origin['input'] == '<table>' and table_type == dc.TAG_TABLE_SCHEMA:
                     logger.info(f'  > Creating description for table schema: {data_table_tag}')
                     if 'table_name' not in origin or origin['table_name'] == '':
@@ -997,6 +1011,7 @@ def write_sql(meta_data: pd.DataFrame,
                     )
                     logger.info(f'  <table> {data_table_tag}')
 
+                # all other situations, mainly <input>
                 else:
                     sql_code += create_table(
                         schema = schema,
@@ -1010,17 +1025,128 @@ def write_sql(meta_data: pd.DataFrame,
 
                     logger.info(f'  <file> {data_table_tag} (default)')
 
-                    # if
                 # if
+
+            # if
 
             outfile.write(sql_code)
             outfile.write('\n\n')
+
         # for -- tables
+
+        # add custom SQL to sql_code when present
+        if sql_script is not None:
+            extra_sql = apply_sql_script(
+                supplier_id = supplier_id,
+                project_name = project_name,
+                sql_script = sql_script,
+                servers = servers,
+            )
+
+            outfile.write(extra_sql)
+            outfile.write('\n\n')
+        # if
     # with
 
     return
 
 ### write_sql ###
+
+
+def apply_sql_script(supplier_id: str,
+                     project_name: str,
+                     sql_script: str,
+                     servers: dict,
+                    ) -> str:
+    """ Read custom SQL script.
+
+    Reads a custom SQL script yaml file and converts it to real SQL.
+
+
+    Args:
+        supplier_id (str): name of the supplier
+        project_name (str): name of the project
+        sql_script (str): dict containing the sql script instructions
+        servers (dict): server configurations
+
+    Raises:
+        DiDoError: when irrecoverable errors occur
+
+    Returns:
+        str: generated SQL
+    """
+    # read sql script as yaml config file
+    with open(sql_script, 'r') as infile:
+        script = yaml.safe_load(infile)
+
+    logger.info('')
+    logger.info(f'[Adding custom SQL code from {sql_script}]')
+
+    # test if required fields are in script
+    if 'AFFECTED_TABLES' not in script.keys() or \
+        'SQL' not in script.keys():
+
+        raise DiDoError('Script MUST contain AFFECTED_TABLES and SQL fields')
+
+    # if
+
+    # get all names of tables for this supplier and project
+    table_names = dc.get_table_names(project_name, supplier_id, 'description')
+    table_names = [table_names[k] for k in table_names.keys()]
+    data_names = dc.get_table_names(project_name, supplier_id, 'data')
+    [table_names.append(data_names[k]) for k in data_names.keys()]
+
+    # determine to which tables to apply the script
+    affected_tables = script['AFFECTED_TABLES']
+    if affected_tables == ['*']:
+        affected_tables = table_names
+
+    # test if affected tables exist
+    errors = []
+    for table_name in affected_tables:
+        if table_name not in table_names:
+            errors.append(table_name)
+
+    if len(errors) > 0:
+        raise DiDoError('*** Non existing affected tables: ' + str(errors))
+
+    # get popstgres schema for the tables: always in data server
+    server = servers['DATA_SERVER_CONFIG']
+    schema = server['POSTGRES_SCHEMA']
+
+    # get sql statements
+    statements = script['SQL']
+
+    # iterate over all tables, over all sql statements
+    logger.info('Tables affected:')
+    queries = ''
+    for table in affected_tables:
+        logger.info(f' - {table}')
+
+        for statement in statements:
+            # format variables:
+            # - schema: database schema
+            # - table: name of the table to apply
+            vars = {'schema': schema, 'table': table}
+            query = statements[statement].format(**vars)
+
+            # test for terminating ;
+            if not query.endswith(';'):
+                query += ';'
+
+            # # add qury to queries
+            queries += query + '\n'
+
+        # for
+
+    # for
+
+    # db_col = {'schema': schema, 'table': table}
+    # query = dc.DB_SHOWD.format(**db_col)
+
+    return queries
+
+### apply_sql_script ###
 
 
 def test_for_existing_tables(supplier_id: str,
@@ -2035,9 +2161,12 @@ def dido_create(config_dict: dict):
             keyword = 'SUPPLIERS',
         )
 
-        if len(projects) == 0:
-            projects = [project_name]
+        # Read custom SQL script for supplier, None when not present
+        sql_script = dc.get_par(config_dict, 'SQL_SCRIPT', None)
+        if sql_script is not None and not sql_script.startswith('/'):
+            sql_script = os.path.join(root_dir, 'sql', leverancier_id, sql_script)
 
+        # Iterate over all projects
         for project_key in projects:
             dc.subheader(f'Project: {project_key}', '-')
             project = projects[project_key]
@@ -2097,27 +2226,16 @@ def dido_create(config_dict: dict):
             leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_META][dc.TAG_TABLE_META] = \
                 meta_table
 
-            # dir_load = os.path.join(work_dir, 'schemas', leverancier_id)
-            # source_file = project['schema_file'] + '.schema.csv'
-            # fname_schema_load = os.path.join(dir_load, source_file)
-            # schema = pd.read_csv(
-            #     fname_schema_load,
-            #     sep = ';',
-            #     dtype = str,
-            #     keep_default_na = False,
-            #     na_values = []
-            # ).fillna('')
-            # schema = leverancier_config[dc.TAG_TABLES][dc.TAG_TABLE_SCHEMA][dc.TAG_TABLE_SCHEMA] = schema
-
             write_sql(
                 meta_data = meta_table,
                 supplier_config = leverancier_config,
                 supplier_id = leverancier_id,
-                project_config = project,
+                # project_config = project,
                 project_name = project_key,
                 overwrite = overwrite_tables,
                 servers = db_servers,
                 sql_filename = sql_filename,
+                sql_script = sql_script,
             )
 
             # create documentation
