@@ -277,7 +277,7 @@ def load_data(supplier_config: dict,
     if server_type == 's3':
         server_path = data_dicts[supplier]['server_path']
         s3_helper.s3_command_get_file(
-            download_to = filename,
+            download_to = filename, # postgres indexen
             filepath_s3 = server_path,
             force_overwrite = True
         )
@@ -306,8 +306,9 @@ def load_data(supplier_config: dict,
             keep_default_na = False,
             header = None,
             nrows = sample_size,
-            engine = 'c',
+            engine = 'c', # is less error prone than the python engine
             encoding = encoding,
+            index_col = False, # if not False, 1st col will be index
         )
 
     else:
@@ -315,13 +316,13 @@ def load_data(supplier_config: dict,
         try:
             data = pd.read_csv(
                 filename,
-                # mangle_dupe_cols = False,
                 sep = delimiter,
-                dtype = str,
-                keep_default_na = False,
+                dtype = str, # read all data as string
+                keep_default_na = False, # prevent empty string being interpreted as NaN
                 nrows = sample_size,
-                engine = 'c',
+                engine = 'c', # is less error prone than the python engine
                 encoding = encoding,
+                index_col = False, # if not False, 1st col will be index
             )
 
             # Check for duplicate columns, Pandas appends .1 to duplicately-named columns.
@@ -810,7 +811,12 @@ def save_data(data: pd.DataFrame,
                            data_dirs[supplier]['data_file'])
     logger.info(f'Writing: {savename}')
 
-    data.to_csv(savename, sep = ';', index = False, quoting = csv.QUOTE_ALL, encoding = 'utf8')
+    data.to_csv(savename,
+        sep = ';',
+        index = False,
+        quoting = csv.QUOTE_ALL,
+        encoding = 'utf8'
+    )
 
     cpu = time.time() - cpu
 
@@ -1082,6 +1088,7 @@ def check_type(data: pd.DataFrame,
             n_errors += 1
 
             value = data.iloc[row].loc[column]
+
             report = add_error(
                 report = report,
                 row = row,
@@ -1109,12 +1116,26 @@ def check_data_types(data: pd.DataFrame,
                     max_errors: int,
                     total_errors: int,
                    ):
-    """"""
+    """ Checks whether the data columns contain data according to their data types
+
+    Args:
+        data (pd.DataFrame): DataFrame containing the data
+        schema (pd.DataFrame): Decsription of the data including col name and data type
+        report (pd.DataFrame): results of the check
+        max_errors (int): number of errors after which dido_import quits checking
+        total_errors (int): Total errors found
+
+    Returns:
+        DataFrame, int: The error report and total number of errors
+    """
     cpu = time.time()
     data_types, _ = dc.create_data_types()
     logger.info('Data type check')
 
     for col in data.columns:
+        # Not all columns may occur in the data, in that case they will be
+        # NULLed by psql.
+
         check = ''
         n_errors = total_errors
         data_type = schema.loc[col, 'datatype'].lower().strip()
@@ -1584,21 +1605,16 @@ def check_all(data: pd.DataFrame,
 
     dc.report_ram('RAM used before check_all')
 
-    # report = pd.DataFrame(np.zeros(data.shape), columns = data.columns, index = data.index, dtype = np.int32)
-    # logger.info(f'[RAM used before messages creation {process.memory_info().rss / (1024 * 1024)}]')
-    # messages = pd.DataFrame(columns = data.columns, index = data.index, dtype = str).fillna('')
-    # logger.info(f'[RAM used after report creation {process.memory_info().rss / (1024 * 1024)}]')
     total_errors = 0
 
     # when data_check: no is in the supplier_config, don't check the data
     check = dc.get_par(supplier_config, 'data_check', True)
     if check:
-        try:
+            # try:
             report, total_errors = check_constraints(
                 data = data,
                 schema = schema,
                 report = report,
-                # messages = messages,
                 max_errors = max_errors,
                 total_errors = total_errors
             )
@@ -1606,7 +1622,6 @@ def check_all(data: pd.DataFrame,
                 data = data,
                 schema = schema,
                 report = report,
-                # messages = messages,
                 max_errors = max_errors,
                 total_errors = total_errors
             )
@@ -1620,8 +1635,8 @@ def check_all(data: pd.DataFrame,
 
             logger.info(f'Total errors: {total_errors}')
 
-        except DiDoError as error:
-            logger.info(error)
+        # except DiDoError as error:
+        #     logger.info(error)
 
     else:
         report = add_error(
@@ -3005,9 +3020,6 @@ def process_supplier(supplier_config: dict,
         DiDoError: when error were detected that violate the integrity of the information
     """
     supplier_id = dc.get_par(supplier_config, 'supplier_id')
-    dc.subheader(supplier_id, '=')
-    # logger.info('')
-    # logger.info(f'=== {supplier_id} ===')
 
     # fetch the limits from delivery.yaml, set defaults
     dlv = dc.get_par_par(supplier_config, 'delivery', 'LIMITS', None)
@@ -3018,14 +3030,16 @@ def process_supplier(supplier_config: dict,
         max_errors = dc.get_par(dlv, 'max_errors', 1000)
         max_rows = dc.get_par(dlv, 'max_rows', 0)
 
+    # define all data table names for supplier and project
     tables_name = dc.get_table_names(project_name, supplier_id, 'data')
 
     data_server = server_configs['DATA_SERVER_CONFIG']
     foreign_server = server_configs['FOREIGN_SERVER_CONFIG']
 
     first_time_table_import = False
-    schema_name = dc.get_table_name(project_name, supplier_id, dc.TAG_TABLE_SCHEMA, 'description')
 
+    # get schema from database
+    schema_name = dc.get_table_name(project_name, supplier_id, dc.TAG_TABLE_SCHEMA, 'description')
 
     supplier_schema = dc.load_schema(schema_name, data_server)
     supplier_schema = supplier_schema.set_index('kolomnaam')
@@ -3039,6 +3053,8 @@ def process_supplier(supplier_config: dict,
     todo_files = [f for f in os.listdir(todo_dir) if os.path.isfile(os.path.join(todo_dir, f))]
 
     # retrieve data file from config for current supplier
+    # when table, fetch the data from the database
+    #TODO: is not updated for a long time either improve or delete this code
     if origin['input'] == '<table>':
         if st.table_contains_data(tables_name[dc.TAG_TABLE_SCHEMA], data_server):
             tbl_nm = data_server['POSTGRES_DB'] + '::' + \
@@ -3057,6 +3073,7 @@ def process_supplier(supplier_config: dict,
         data_server['table'] = tables_name[dc.TAG_TABLE_SCHEMA]
         foreign_server['table'] = origin['table_name']
 
+    # No table, file will be fetched from file
     else:
         supplier_file = dc.get_par(supplier_config, 'data_file')
         _, sfile, sext = dc.split_filename(supplier_file)
