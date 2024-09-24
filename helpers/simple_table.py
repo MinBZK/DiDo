@@ -385,7 +385,20 @@ def show_database(title: str, config: dict):
     return
 
 
-def table_exists(table_name: str, verbose: bool = True, sql_server_config: dict = None):
+def table_exists(table_name: str,
+                 verbose: bool = True,
+                 sql_server_config: dict = None
+                ):
+    """ Tests if a table exists by querying the postgres information schema
+
+    Args:
+        table_name (str): Name of the table to test
+        verbose (bool, optional): Talkative or not. Defaults to True.
+        sql_server_config (dict, optional): Server to host the table. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
     host = sql_server_config.get('POSTGRES_HOST', DEFAULT_SQL_HOST)
     port = sql_server_config.get('POSTGRES_PORT', DEFAULT_SQL_PORT)
     database = sql_server_config.get('POSTGRES_DB', '* No default database *')
@@ -447,8 +460,11 @@ def table_contains_data(table_name: str, server_config: dict) -> bool:
     return has_data
 
 
-def table_size(table_name: str, verbose: bool = True, sql_server_config: dict = None) -> int:
-    """ return number of rows
+def table_size(table_name: str,
+               verbose: bool = True,
+               sql_server_config: dict = None
+              ) -> int:
+    """ returns number of rows of table_name
     """
 
     host = sql_server_config.get('POSTGRES_HOST', DEFAULT_SQL_HOST)

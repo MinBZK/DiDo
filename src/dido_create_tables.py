@@ -295,7 +295,7 @@ def apply_schema_odl(template: pd.DataFrame,
                     new_df.loc[idx, col_name] = value
 
             # if
-        # fordd_20231117_S_ZBIOJOBT_Functie_teksten.csv
+        # for
     # for
 
     # some attributes are overruled by meta data
@@ -457,7 +457,8 @@ def get_pdirekt_header_file(header_file: str, root_directory: str, supplier_id: 
     # check if first character in data_file is a /
     if header_file.startswith('/'):
         # absolute path
-        pad, fn, ext = dc.split_filename(data_file)
+        # pad, fn, ext = dc.split_filename(data_file) # Where is data_file coming from????
+        pad, fn, ext = dc.split_filename(header_file)
         filename = os.path.join(root_directory, fn + ext)
         shutil.copy2(header_file, filename)
 
@@ -479,7 +480,7 @@ def get_pdirekt_header_file(header_file: str, root_directory: str, supplier_id: 
     else:
         # path relative to root_directory/data
         pad = os.path.join(root_directory, 'data', supplier_id)
-        filename = data_file
+        filename = os.path.join(pad, header_file) # data_file ???
 
     # if
 
@@ -1154,14 +1155,6 @@ def test_for_existing_tables(supplier_id: str,
                              supplier_config: dict,
                              sql_server_config: dict,
                             ):
-    """iterate over all elements in table and creates a data description
-
-    When a data DataFrame is passed the table itself will be created and the
-    data will be stored into the table.
-
-    Args:
-        project_name (str): name of the project
-    """
 
     results = {}
     any_present = False
@@ -1170,15 +1163,25 @@ def test_for_existing_tables(supplier_id: str,
     # for supplier in supplier_config:
     logger.info(f'[Creating {supplier_id}]')
 
+    # test if tables exist
     for table_type in supplier_config[dc.TAG_TABLES]:
+        # test for existence of the table description
         table_name = dc.get_table_name(project_name, supplier_id, table_type, 'description')
-        present, n_rows = st.test_table_presence(table_name, sql_server_config)
-        results[table_name] = [present, n_rows]
+        present = st.table_exists(
+            table_name = table_name,
+            verbose = False,
+            sql_server_config  = sql_server_config,
+           )
+        results[table_name] = [present]
         any_present = any_present or present
 
         table_name = dc.get_table_name(project_name, supplier_id, table_type, 'data')
-        present, n_rows = st.test_table_presence(table_name, sql_server_config)
-        results[table_name] = [present, n_rows]
+        present = st.table_exists(
+            table_name = table_name,
+            verbose = False,
+            sql_server_config  = sql_server_config,
+           )
+        results[table_name] = [present]
         any_present = any_present or present
 
     # for
@@ -1352,14 +1355,17 @@ def create_index(schema: pd.DataFrame,
         index_dict[index_name] = {'columns': [], 'order': []}
         cols = index_supplied[index_name]
         for col in cols:
-            items = col.split(':')
-            index_dict[index_name]['columns'].append(items[0].lower())
-            if len(items) > 1:
-                asc = items[1].upper()
-                if asc == 'DESC' or asc == 'DESCENDING':
-                    index_dict[index_name]['order'].append(False)
+            try:
+                order = cols[col].upper()
+            except:
+                order = ''
+
+            index_dict[index_name]['columns'].append(col.lower()) # (items[0].lower())
+            if len(order) > 2:
+                if order == 'DESC' or order == 'DESCENDING':
+                    index_dict[index_name]['order'].append('DESC')
                 else:
-                    index_dict[index_name]['order'].append(True)
+                    index_dict[index_name]['order'].append('ASC')
                 # if
             # if
         # for
@@ -1376,10 +1382,7 @@ def create_index(schema: pd.DataFrame,
         for i in range(len(index_dict[index_name]['columns'])):
             col = index_dict[index_name]['columns'][i]
             order = index_dict[index_name]['order'][i]
-            if order:
-                sql += f"    {col} ASC,\n"
-            else:
-                sql += f"    {col} DESC,\n"
+            sql += f"    {col} {order},\n"
         # for
         sql = sql[:-2] + '\n);\n\n'
 
@@ -1443,6 +1446,7 @@ def create_table(schema: pd.DataFrame,
     table_comment = ''
     comments = ''
     schema_name = server_config['POSTGRES_SCHEMA']
+    supplier_id = supplier_config['supplier_id']
 
     # create variable names and types based on schema
     for idx, row in schema.iterrows():
@@ -1467,8 +1471,10 @@ def create_table(schema: pd.DataFrame,
 
     names = dc.get_table_names(
         project_name = project_name,
-        supplier = supplier_config['supplier_id'],
+        supplier = supplier_id,
     )
+
+    current_config = supplier_config
 
     # add primary key when defined
     if 'primary_key' in supplier_config \
@@ -1490,7 +1496,7 @@ def create_table(schema: pd.DataFrame,
     tbd += table_comment + comments + '\n\n'
 
     # look if a primary key has to be added to the data file
-    if 'index' in supplier_config \
+    if 'index' in supplier_config[project_name] \
         and table_name == names[dc.TAG_TABLE_SCHEMA]:
 
         sql_index = create_index(
@@ -1499,7 +1505,7 @@ def create_table(schema: pd.DataFrame,
             table_name = table_name,
             overwrite = overwrite,
             server_config = server_config,
-            supplier_config = supplier_config,
+            supplier_config = supplier_config[project_name],
         )
         if len(sql_index) > 0:
             tbd += sql_index
@@ -2205,7 +2211,7 @@ def dido_create(config_dict: dict):
             )
 
             # warn if the tables exist in the database
-            _, any_present = test_for_existing_tables(
+            present, any_present = test_for_existing_tables(
                 supplier_id = leverancier_id,
                 project_name = project_key,
                 supplier_config = leverancier_config,
@@ -2213,9 +2219,16 @@ def dido_create(config_dict: dict):
             )
 
             if any_present:
-                logger.warning('!!! Tables already exist, please destroy '
-                               'these using "dido_kill_supplier"')
-                dido_list()
+                logger.warning('!!! Tables already exist for supplier '
+                               f'{leverancier_id}, project {project_key}. '
+                               'Remove these using "dido_kill_supplier"')
+                logger.warning('Existing tables:')
+                for key in present.keys():
+                    if present[key]:
+                        logger.info(f' - {key}')
+
+                logger.info('')
+            # if
 
             # create SQL to create tables
             schema_name = 'bronbestand_' + 'attribuutmeta' + '_description'
