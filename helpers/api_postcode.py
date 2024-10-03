@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import logging
 import requests
 
@@ -228,113 +229,181 @@ def create_workdir_structure(config_vars: dict, server_config):
     return
 
 
-if __name__ == '__main__':
-    # read commandline parameters to create log_file from
-    # cli, args = read_cli()
+def api_test(header: str):
+    cpu = time.time()
 
     # read commandline parameters
-    app_path, args = read_cli()
-
-    # create logger in project directory
-    log_file = os.path.join(args.project, app_path['name'] + '.log')
-    logger = create_log(log_file, level = 'DEBUG')
+    appname, args = dc.read_cli()
 
     # read the configuration file
-    config_dict = read_config(args.project)
+    config_dict = dc.read_config(args.project)
+    dc.display_dido_header(header, config_dict)
+    delivery_filename = args.delivery
 
+    delivery_config = dc.read_delivery_config(
+        project_path = config_dict['PROJECT_DIR'],
+        delivery_filename = args.delivery,
+    )
+
+    overwrite = dc.get_par(delivery_config, 'ENFORCE_IMPORT_IF_TABLE_EXISTS', False)
 
     # get the database server definitions
     db_servers = config_dict['SERVER_CONFIGS']
-    odl_server_config = db_servers['ODL_SERVER_CONFIG']
-    data_server_config = db_servers['DATA_SERVER_CONFIG']
-    foreign_server_config = db_servers['FOREIGN_SERVER_CONFIG']
 
     # get project environment
-    project_name = config_dict['PROJECT_NAME']
-    root_dir = config_dict['ROOT_DIR']
     work_dir = config_dict['WORK_DIR']
     leveranciers = config_dict['SUPPLIERS']
-    columns_to_write = config_dict['COLUMNS']
-    table_desc = config_dict['TABLES']
-    report_periods = config_dict['REPORT_PERIODS']
+    table_desc = config_dict['PARAMETERS']['TABLES']
 
-    if 'origin' in config_dict['SUPPLIERS']['postcode_nl']:
-        origin = config_dict['SUPPLIERS']['postcode_nl']['origin']
+    # select which suppliers to process
+    suppliers_to_process = dc.get_par(config_dict, 'SUPPLIERS_TO_PROCESS', '*')
 
-        # Read the api keys from environment file
-        key = config_dict['KEY']
-        secret = config_dict['SECRET']
+    # just * means process all
+    if suppliers_to_process == '*':
+        suppliers_to_process = leveranciers.keys()
 
-        # read url's to access the data
-        url_account = origin['url_account']
-        url_delivery =  origin['url_delivery']
+    # for each supplier, for each project, for each delivery: process it
+    for leverancier_id in suppliers_to_process:
+        dc.subheader(f'Supplier: {leverancier_id}', '=')
 
-        # authenticate
-        authentication = HTTPBasicAuth(key, secret)
+        leverancier, projects = dc.get_supplier_projects(
+            config = delivery_config,
+            supplier = leverancier_id,
+            delivery = leverancier_id,
+            keyword = 'DELIVERIES',
+        )
 
-        # get other variables: datetime.strptime(dateString, "%d-%B-%Y")
-        last_date = origin['start_date']
+        for project_key in projects.keys():
+            dc.subheader(f'Project: {project_key}', '-')
 
-    else:
-        raise ValueError('Origin expected for postcode_nl')
+            # get all cargo from the delivery_dict
+            cargo_dict = dc.get_cargo(delivery_config, leverancier_id, project_key)
 
-    # make working directory structure
-    create_workdir_structure(config_dict, db_servers['ODL_SERVER_CONFIG'])
+            # process only specified deliveries
+            deliveries_to_process = dc.get_par(
+                config = delivery_config,
+                key = 'DELIVERIES_TO_PROCESS',
+                default = '*',
+            )
+            if deliveries_to_process == '*':
+                deliveries_to_process = cargo_dict.keys()
 
-    # get account id, quit when unsuccesful
-    status, number = get_account_id(url_account, authentication)
-    if status != HTTP_OK:
-        logger.error(f'*** Error ({status}) when trying to login into API account, exit 1')
-        sys.exit(1)
+            # process all deliveries
+            for cargo_name in cargo_dict.keys():
+                dc.subheader(f'Delivery: {cargo_name}', '.')
 
-    else:
-        logger.info(f'==> logged in into account {number}')
+                # present all deliveries and the selected one
+                logger.info('Delivery configs supplied (> is selected)')
+                for key in cargo_dict.keys():
+                    if key == cargo_name:
+                        logger.info(f" > {key}")
+                    else:
+                        logger.info(f" - {key}")
+                    # if
+                # for
 
-    # if
 
-    status, subs = get_account_subscriptions(url_account, authentication, number)
-    if status != HTTP_OK:
-        logger.error(f'*** Error ({status}) when trying to get subscription from API account, exit 2')
-        sys.exit(2)
+                if 'origin' in config_dict['SUPPLIERS']['postcodenl']:
+                    origin = config_dict['SUPPLIERS']['postcodenl']['origin']
 
-    else:
-        logger.info(f'==> Succesfully obtained subscriptions')
-        show_account_info([subs])
+                    # Read the api keys from environment file
+                    key = config_dict['KEY']
+                    secret = config_dict['SECRET']
 
-    # if
+                    # read url's to access the data
+                    url_account = origin['url_account']
+                    url_delivery =  origin['url_delivery']
 
-    from_date = (last_date + timedelta(days = 1)).strftime('%Y%m%d')
-    to_date = datetime.today().strftime('%Y%m%d')
+                    # authenticate
+                    authentication = HTTPBasicAuth(key, secret)
 
-    logger.info(f'==> Fetching deliveries valid between {from_date} and {to_date}')
-    status, delivs = get_subscriptions(url_delivery,
-                                       authentication,
-                                       from_date,
-                                       to_date)
-    if status != HTTP_OK:
-        logger.error(f'*** Error ({status}) when trying to get pending deliveries, exit 3')
-        sys.exit(3)
+                    # get other variables: datetime.strptime(dateString, "%d-%B-%Y")
+                    last_date = origin['start_date']
 
-    else:
-        logger.info(f'==> Got info on deliveries to download')
-        show_account_info(delivs)
+                else:
+                    raise ValueError('Origin expected for postcodenl')
 
-    # if
-    print(delivs)
-    df = pd.DataFrame(delivs) # .from_dict(delivs, orient='index')
-    df.to_csv('deliveries.csv')
-    print(df)
-    logger.info('[Exit]')
+                # make working directory structure
+                create_workdir_structure(config_dict, db_servers['ODL_SERVER_CONFIG'])
 
-    sys.exit(0)
+                # get account id, quit when unsuccesful
+                status, number = get_account_id(url_account, authentication)
+                if status != HTTP_OK:
+                    logger.error(f'*** Error ({status}) when trying to login into API account, exit 1')
+                    sys.exit(1)
 
-    logger.info(f'===> Downloading deliveries to {work_dir}')
-    status, downloads = get_deliveries(url_delivery, authentication, delivs, work_dir)
-    if status != HTTP_OK:
-        logger.error(f'*** Error ({status}) downloading deliveries failed, exit 4')
-        sys.exit(4)
+                else:
+                    logger.info(f'==> logged in into account {number}')
 
-    else:
-        logger.info(f'==> Downloading files succesful: {downloads}')
+                # if
 
-    # if
+                status, subs = get_account_subscriptions(url_account, authentication, number)
+                if status != HTTP_OK:
+                    logger.error(f'*** Error ({status}) when trying to get subscription from API account, exit 2')
+                    sys.exit(2)
+
+                else:
+                    logger.info('==> Succesfully obtained subscriptions')
+                    show_account_info([subs])
+
+                # if
+
+                from_date = (last_date + timedelta(days = 1)).strftime('%Y%m%d')
+                to_date = datetime.today().strftime('%Y%m%d')
+
+                logger.info(f'==> Fetching deliveries valid between {from_date} and {to_date}')
+                status, delivs = get_subscriptions(url_delivery,
+                                                authentication,
+                                                from_date,
+                                                to_date)
+                if status != HTTP_OK:
+                    logger.error(f'*** Error ({status}) when trying to get pending deliveries, exit 3')
+                    sys.exit(3)
+
+                else:
+                    logger.info('==> Got info on deliveries to download')
+                    show_account_info(delivs)
+
+                # if
+                print(delivs)
+                df = pd.DataFrame(delivs) # .from_dict(delivs, orient='index')
+                df.to_csv('deliveries.csv')
+                print(df)
+                logger.info('[Exit]')
+
+                sys.exit(0)
+
+                logger.info(f'===> Downloading deliveries to {work_dir}')
+                status, downloads = get_deliveries(url_delivery, authentication, delivs, work_dir)
+                if status != HTTP_OK:
+                    logger.error(f'*** Error ({status}) downloading deliveries failed, exit 4')
+                    sys.exit(4)
+
+                else:
+                    logger.info(f'==> Downloading files succesful: {downloads}')
+
+                # if
+            # for
+        # for
+    # for
+
+    cpu = time.time() - cpu
+    logger.info('')
+    logger.info(f'[Ready {appname["name"]} in {cpu:.0f} seconds]')
+    logger.info('')
+
+    return
+
+### api_test ###
+
+
+if __name__ == '__main__':
+    # read commandline parameters
+    cli, arguments = dc.read_cli()
+
+    # create logger in project directory
+    log_file = os.path.join(arguments.project, 'logs', cli['name'] + '.log')
+    logger = dc.create_log(log_file, level = 'DEBUG')
+
+    # go
+    api_test('Importing Data')

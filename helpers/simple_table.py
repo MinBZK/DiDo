@@ -298,7 +298,7 @@ def sql_statement(statement: str,
 
     return result
 
-### sql_statement###
+### sql_statement ###
 
 
 def row_count(statement: str,

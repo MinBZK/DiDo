@@ -128,7 +128,8 @@ def substitute_vars(
     for idx in schema.index:
         for col in schema.columns:
             value = schema.loc[idx, col]
-            value = value.format(**vars)
+            if not value.startswith('re: '):
+                value = value.format(**vars)
             schema.loc[idx, col] = value
 
         # for

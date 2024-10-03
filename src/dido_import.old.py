@@ -418,7 +418,7 @@ def evaluate_headers(data: pd.DataFrame,
 
     logger.info('')
 
-    # 1. test if headers are present in the data
+    # 1. if not, test if headers are present in the data
     headers_present = False
     if supplier in headers.keys():
         headers_present = headers[supplier]
@@ -451,8 +451,7 @@ def evaluate_headers(data: pd.DataFrame,
     # if
 
     # convert header_columns to list
-    if header_columns is not None:
-        header_columns = list(header_columns)
+    header_columns = list(header_columns)
 
     # 3. if not, get them from the schema
     if header_columns is None or len(header_columns) == 0:
@@ -1008,11 +1007,8 @@ def check_null_iter(data: pd.DataFrame,
         column (str): column to check
 
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        _type_: _description_reate dataframe with dtypes
     """
-    error_code = 0
     if 'NOT NULL' in schema.loc[column, 'constraints']:
         col_index = data.columns.get_loc(column)
 
@@ -1027,24 +1023,23 @@ def check_null_iter(data: pd.DataFrame,
                 total_errors += 1
                 report = add_error(
                     report = report,
+                    # mess = messages,
                     row = row,
                     col = col_index,
                     col_name = column,
                     err_no = report_code,
                     explain = 'NULL detected where not allowed'
                 )
-
-                if total_errors > max_errors:
-                    error_code = 1
-                    logger.error(f'*** maximum number of check_null_iter errors {max_errors} '
-                                f'exceeded for column {column}. Checking of errors stopped')
-
-                    break
             # if
         # for
+
+        if total_errors > max_errors:
+            raise DiDoError(f'Maximum number of check_null_iter errors {max_errors} '
+                            f'exceeded for column {column}. Checking of errors stopped')
+
     # if
 
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_null_iter ###
 
@@ -1070,12 +1065,12 @@ def check_type(data: pd.DataFrame,
         report_code (int): data quality code reflecting a failed test
         column (str): column to check
 
+    Raises:
+        DiDoError: when number of errors exceeds a maximum
+
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        pd.DataFrame, int: see description of the parameters
     """
-    error_code = 0
     col_index = data.columns.get_loc(column)
 
     result = data[column].str.match(check_function)
@@ -1084,17 +1079,13 @@ def check_type(data: pd.DataFrame,
         logger.debug(f'{len(result) - result.sum()} errors found in column {column}, type {data_type}')
 
         idx = result[~result].index
+        n_errors = 0
         for row in idx:
-            total_errors += 1
-
             # if total number of errors exceeds the maximum allowed, break the loop
-            if total_errors > max_errors:
-                error_code = 1
-                logger.error(f'*** Maximum number of check_type errors ({max_errors}) '
-                            f'exceeded for column [{column}]. Checking of errors stopped')
+            if total_errors + n_errors > max_errors:
                 break
 
-            # if
+            n_errors += 1
 
             value = data.iloc[row].loc[column]
 
@@ -1107,9 +1098,14 @@ def check_type(data: pd.DataFrame,
                 explain = f'Datatype not {data_type}, value found is "{value}"'
             )
         # for
+        total_errors += len(idx)
     # if
 
-    return report, total_errors, error_code
+    if total_errors > max_errors:
+        raise DiDoError(f'Maximum number of check_type errors ({max_errors}) '
+                        f'exceeded for column [{column}]. Checking of errors stopped')
+
+    return report, total_errors
 
 ### check_type ###
 
@@ -1130,11 +1126,8 @@ def check_data_types(data: pd.DataFrame,
         total_errors (int): Total errors found
 
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        DataFrame, int: The error report and total number of errors
     """
-    error_code = 0
     cpu = time.time()
     data_types, _ = dc.create_data_types()
     logger.info('Data type check')
@@ -1161,7 +1154,7 @@ def check_data_types(data: pd.DataFrame,
             else:
                 check = data_types[data_type]
 
-                report, total_errors, error_code = check_type(
+                report, total_errors = check_type(
                     data = data,
                     schema = schema,
                     report = report,
@@ -1189,18 +1182,12 @@ def check_data_types(data: pd.DataFrame,
         if len(check) > 0:
             logger.debug(f'    Tested for: {check}')
 
-        if error_code != 0:
-            logger.error('*** Totale errors exceeded, error checking stopped')
-
-            break
-
     # for
 
     cpu = time.time() - cpu
-    logger.error(f'*** Checking data types   - errors: {total_errors} CPU: {cpu:.2f} '
-                f'data: [{len(data)}, {len(data.columns)}]')
+    logger.info(f'Checking data types   - errors: {total_errors} CPU: {cpu:.2f} data: [{len(data)}, {len(data.columns)}]')
 
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_data_types ###
 
@@ -1214,26 +1201,9 @@ def check_domain_list(data: pd.DataFrame,
                       column: str,
                       domain: str
                      ):
-    """ Checks if values occur in a predefined list.
-
-    Args:
-        data (pd.DataFrame): Data
-        schema (pd.DataFrame): Schema description
-        report (pd.DataFrame): Error report thus far
-        max_errors (int): Maximum of errors allowed
-        total_errors (int): Total number of errors found thus far
-        report_code (int): report code
-        column (str): Name of column to check
-        domain (str): List of domain values
-
-    Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
-    """
+    """"""
     # Domain is specified as a list specification: [1, 3.14, 'a'] in the database
     # the code below unpacks the values, spaces and quotes stripped left and right
-    error_code = 0
     domain_list = [x.strip().strip('\"').strip('\'').strip('\"') for x in domain[1:-1].split(',')]
     may_be_null: bool = 'NOT NULL' not in schema.loc[column, 'constraints']
     col_index = data.columns.get_loc(column)
@@ -1267,24 +1237,11 @@ def check_domain_list(data: pd.DataFrame,
                     explain = f'Value not in domain list: "{value}"'
                 )
 
-                # break out of inner loop
-                if total_errors > max_errors:
-                    error_code = 1
-                    logger.error(f'*** Maximum number of check_domain_list errors {max_errors} '
-                                f'exceeded for column {column}. Checking of errors stopped')
-
-                    break
-                # if
-            # if
-        # for
-
-        # don't forget to break out of outer loop
         if total_errors > max_errors:
-            break
+            raise DiDoError(f'Maximum number of check_domain_list errors {max_errors} '
+                            f'exceeded for column {column}. Checking of errors stopped')
 
-    # for
-
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_domain_list ###
 
@@ -1302,21 +1259,22 @@ def check_domain_minmax(
     """_summary_
 
     Args:
-        data (pd.DataFrame): imported data
-        schema (pd.DataFrame): schema describing the data
-        report (pd.DataFrame): current report regarding the data
-        total_errors (int): total number of error till now
-        check_function (_type_): function to do the type check
-        report_code (int): data quality code reflecting a failed test
-        column (str): column to check
-        domain (str): "min:max"
+        data (pd.DataFrame): _description_
+        schema (pd.DataFrame): _description_
+        report (pd.DataFrame): _description_
+        max_errors (int): _description_
+        total_errors (int): _description_
+        report_code (int): _description_
+        column (str): _description_
+        domain (str): _description_
+
+    Raises:
+        ValueError: _description_
+        DiDoError: _description_
 
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        _type_: _description_
     """
-    error_code = 0
     may_be_null: bool = 'NOT NULL' not in schema.loc[column, 'constraints']
     data_type = schema.loc[column, 'datatype'].lower()
     mins, maxs = domain.split(':')
@@ -1330,19 +1288,27 @@ def check_domain_minmax(
         min_val, max_val = float(mins), float(maxs)
 
     for row in range(len(data)):
+        # test if an error was already reported, further checks are not very useful
+        # if report.iloc[row][column] != 0:
+        #     continue
+
         value = data.iloc[row][column]
 
         # Special case: when empty and NULL is allowed, just don't check
         if value == '' and may_be_null:
             continue
 
-        if data_type in ['integer', 'bigint']:
-            value = int(value)
+        try:
+            if data_type in ['integer', 'bigint']:
+                value = int(value)
 
-        elif data_type in ['numeric', 'real', 'double']:
-            value = float(value)
+            elif data_type in ['numeric', 'real', 'double']:
+                value = float(value)
 
-        if not min_val <= value <= max_val:
+            if not min_val <= value <= max_val:
+                raise ValueError
+
+        except Exception:
             total_errors += 1
             report = add_error(
                 report = report,
@@ -1353,19 +1319,10 @@ def check_domain_minmax(
                 explain = f'Value {value} exceeds min {mins} or max {maxs}'
             )
 
-            if total_errors > max_errors:
-                error_code = 1
-                logger.error(f'*** Maximum number of check errors {max_errors} '
-                            'exceeded. Checking of errors stopped')
-                break
+        if total_errors > max_errors:
+            raise DiDoError(f'Maximum number of check errors {max_errors} exceeded. Checking of errors stopped')
 
-            # if
-
-        # if
-
-    # for
-
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_domain_minmax ###
 
@@ -1395,11 +1352,10 @@ def check_domain_minmax_2(
         DiDoError: is raised when total_numebers > max_errors
 
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        pd.DataFrame, int: updated dataframe with errors, updated number of total errors
     """
-    error_code = 0
+    # may_be_null: bool = 'NOT NULL' not in schema.loc[column, 'constraints']
+    # data_type = schema.loc[column, 'datatype'].lower()
     mins, maxs = domain.split(':')
     min_val, max_val = float(mins), float(maxs)
 
@@ -1441,11 +1397,10 @@ def check_domain_minmax_2(
             )
 
     if total_errors > max_errors:
-        error_code = 1
-        logger.error(f'*** Maximum number of check_domain_minmax_2 errors {max_errors} '
-                    f'exceeded for column {column}. Checking of errors stopped')
+        raise DiDoError(f'Maximum number of check_domain_minmax_2 errors {max_errors} '
+                        f'exceeded for column {column}. Checking of errors stopped')
 
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_domain_minmax_2 ###
 
@@ -1475,15 +1430,16 @@ def check_domain_re(data: pd.DataFrame,
         DiDoError: is raised when total_numebers > max_errors
 
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        pd.DataFrame, int: updated dataframe with errors, updated number of total errors
     """
-    error_code = 0
     may_be_null = 'NOT NULL' not in schema.loc[column, 'constraints']
     pattern = re.compile(domain.strip())
     col_index = data.columns.get_loc(column)
     for row in range(len(data)):
+        # test if an error was already reported, further checks are not very useful
+        # if report.iloc[row][column] != 0:
+        #     continue
+
         value = data.iloc[row][column]
 
         # Special case: when empty and NULL is allowed, just don't check
@@ -1494,25 +1450,19 @@ def check_domain_re(data: pd.DataFrame,
             total_errors += 1
             report = add_error(
                 report = report,
+                # mess = messages,
                 row = row,
                 col = col_index,
                 col_name = column,
                 err_no = report_code,
                 explain = f'Value {value} exceeds min {mins} or max {maxs}'
             )
-        # if
 
         if total_errors > max_errors:
-            error_code = 1
-            logger.error(f'*** Maximum number of check_domain_re errors {max_errors} '
-                         f'exceeded for column {column}. Checking of errors stopped')
-            break
+            raise DiDoError(f'Maximum number of check_domain_re errors {max_errors} '
+                            f'exceeded for column {column}. Checking of errors stopped')
 
-        # if
-
-    # for
-
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_domain_re ###
 
@@ -1536,21 +1486,16 @@ def check_domain(data: pd.DataFrame,
         DiDoError: is raised when total_numebers > max_errors
 
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        pd.DataFrame, int: updated dataframe with errors, updated number of total errors
     """
-    error_code = 0
     cpu = time.time()
 
     for col in data.columns:
         domain = schema.loc[col, 'domein'].strip()
 
-        # pick the right domain check based on their grammar
-        if len(domain) > 0 and error_code == 0:
-            # check list of values
+        if len(domain) > 0:
             if domain[0:1] == '[':
-                report, total_errors, error_code = check_domain_list(
+                report, total_errors = check_domain_list(
                     data = data,
                     schema = schema,
                     report = report,
@@ -1561,12 +1506,12 @@ def check_domain(data: pd.DataFrame,
                     domain = domain,
                 )
 
-            # check regular expression
             elif domain[0:3] == 're:':
-                report, total_errors, error_code = check_domain_re(
+                report, total_errors = check_domain_re(
                     data = data,
                     schema = schema,
                     report = report,
+                    # messages = messages,
                     max_errors = max_errors,
                     total_errors = total_errors,
                     report_code = dc.VALUE_NOT_CONFORM_RE,
@@ -1574,12 +1519,12 @@ def check_domain(data: pd.DataFrame,
                     domain = domain[3:],
                 )
 
-            # check min:max range (including min and max)
             elif ':' in domain:
-                report, total_errors, error_code = check_domain_minmax(
+                report, total_errors = check_domain_minmax(
                     data = data,
                     schema = schema,
                     report = report,
+                    # messages = messages,
                     max_errors = max_errors,
                     total_errors = total_errors,
                     report_code = dc.VALUE_NOT_BETWEEN_MINMAX,
@@ -1595,10 +1540,9 @@ def check_domain(data: pd.DataFrame,
     # for
 
     cpu = time.time() - cpu
-    logger.info(f'Checking domain       - errors: {total_errors} CPU: {cpu:.2f} '
-                f'data: [{len(data)}, {len(data.columns)}]')
+    logger.info(f'Checking domain       - errors: {total_errors} CPU: {cpu:.2f} data: [{len(data)}, {len(data.columns)}]')
 
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_domain ###
 
@@ -1609,28 +1553,16 @@ def check_constraints(data: pd.DataFrame,
                       max_errors: int,
                       total_errors: int,
                      ):
-    """_summary_
-
-    Args:
-        data (pd.DataFrame): _description_
-        schema (pd.DataFrame): _description_
-        report (pd.DataFrame): _description_
-        max_errors (int): _description_
-        total_errors (int): _description_
-
-    Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
-    """
+    """"""
     # Check for NON NULL
     cpu = time.time()
 
     for col in data.columns:
-        report, total_errors, error_code = check_null_iter(
+        report, total_errors = check_null_iter(
             data = data,
             schema = schema,
             report = report,
+            # messages = messages,
             total_errors = total_errors,
             max_errors = max_errors,
             report_code = dc.VALUE_MANDATORY_NOT_SPECIFIED,
@@ -1638,15 +1570,13 @@ def check_constraints(data: pd.DataFrame,
         )
 
         if total_errors > max_errors:
-            error_code = 1
-            logger.error(f'Maximum number of check_constraints errors {max_errors} exceeded '
-                         f'for column {col}. Checking of errors stopped')
+            raise DiDoError(f'Maximum number of check_constraints errors {max_errors} exceeded '
+                            f'for column {col}. Checking of errors stopped')
 
     cpu = time.time() - cpu
-    logger.info(f'Checking for NON NULL - errors: {total_errors} '
-                f'CPU: {cpu:.2f} data: [{len(data)}, {len(data.columns)}]')
+    logger.info(f'Checking for NON NULL - errors: {total_errors} CPU: {cpu:.2f} data: [{len(data)}, {len(data.columns)}]')
 
-    return report, total_errors, error_code
+    return report, total_errors
 
 ### check_constraints ###
 
@@ -1665,12 +1595,8 @@ def check_all(data: pd.DataFrame,
         max_error (int): maximum # errors before stopping to check for errors
 
     Returns:
-        pd.DataFrame: report,
-        int: total number of errors,
-        int: error code, non zero = total number of errors > max errors
+        pd.DataFrame, int: report of all errors, total # of errors
     """
-    error_code = 0
-
     # create a zero report file
     report = pd.DataFrame(columns = ['Row', 'Column', 'Column Name', 'Error Code', 'Error Message'])
     report['Row'] = report['Row'].astype(int)
@@ -1684,34 +1610,33 @@ def check_all(data: pd.DataFrame,
     # when data_check: no is in the supplier_config, don't check the data
     check = dc.get_par(supplier_config, 'data_check', True)
     if check:
-            if error_code == 0:
-                report, total_errors, error_code = check_constraints(
-                    data = data,
-                    schema = schema,
-                    report = report,
-                    max_errors = max_errors,
-                    total_errors = total_errors
-                )
-
-            if error_code == 0:
-                report, total_errors, error_code = check_data_types(
-                    data = data,
-                    schema = schema,
-                    report = report,
-                    max_errors = max_errors,
-                    total_errors = total_errors
-                )
-
-            if error_code == 0:
-                report, total_errors, error_code = check_domain(
-                    data = data,
-                    schema = schema,
-                    report = report,
-                    max_errors = max_errors,
-                    total_errors = total_errors
-                )
+            # try:
+            report, total_errors = check_constraints(
+                data = data,
+                schema = schema,
+                report = report,
+                max_errors = max_errors,
+                total_errors = total_errors
+            )
+            report, total_errors = check_data_types(
+                data = data,
+                schema = schema,
+                report = report,
+                max_errors = max_errors,
+                total_errors = total_errors
+            )
+            report, total_errors = check_domain(
+                data = data,
+                schema = schema,
+                report = report,
+                max_errors = max_errors,
+                total_errors = total_errors
+            )
 
             logger.info(f'Total errors: {total_errors}')
+
+        # except DiDoError as error:
+        #     logger.info(error)
 
     else:
         report = add_error(
@@ -1984,9 +1909,7 @@ def create_markdown(data: pd.DataFrame,
 
     # check if statistics should be generated
     statistics = dc.get_par_par(supplier_config, 'delivery', 'STATISTICS', {})
-    print(statistics)
-
-    if len(statistics) > 0 and supplier_id in statistics.keys():
+    if len(statistics) > 0:
         # True, so add statistics to the markdown
         md += generate_statistics(
             data = data,
@@ -2186,6 +2109,7 @@ def generate_sql_header(table_name: str,
                        ) -> str:
 
     sql = '-- Quit immediately with exit code other than 0 when an error occurs\n'
+    sql += '\\set ON_ERROR_STOP true\n\n'
 
     # only insert mutation functions when in mutation mode (key_id =/= None)
     if key_id is not None:
@@ -2736,7 +2660,6 @@ def write_mutation_sql(data: pd.DataFrame,
     mutation_info = supplier_config['delivery_type']
     mutation_key = dc.get_par(mutation_info, 'mutation_key')
     mutation_file = os.path.splitext(supplier_config['data_file'])[0]
-    mutation_store_db = dc.get_par(mutation_info, 'store_in_database')
     start_datum, eind_datum = mutate.generate_start_end_dates(
         method = 'filename',
         base = mutation_file,
@@ -2916,25 +2839,9 @@ def write_mutation_sql(data: pd.DataFrame,
     with open(single_sql_name, 'w', encoding = "utf8") as outfile:
         outfile.write(f'BEGIN; -- For supplier {supplier}\n' + sql_code + 'COMMIT;\n')
 
-
-    if mutation_store_db == 'automatic':
-        xeq_sql(sql_code, data_server_config)
-
     return int(errors)
 
 ### write_mutation_sql ###
-
-
-def xeq_sql(sql: str, server_config: dict):
-
-    st.sql_statement(
-        statement = sql,
-        sql_server_config = server_config,
-    )
-
-    return
-
-### xeq_sql ###
 
 
 def test_levering_rapportageperiode(period: str) -> bool:
@@ -3742,18 +3649,15 @@ def prepare_cargo(config_dict: dict,
     data_description = find_data_files(cargo, leverancier_id, root_dir)
     cargo['data_description'] = data_description
 
-    # !!! This try..excapt contains a large block so debugging is hard.
-    # !!! Replace this by better error handling
-    # !!! The try..except are removed for now
-    # try:
-    prepare_one_delivery(cargo, leverancier_id, project_key, real_types)
+    try:
+        prepare_one_delivery(cargo, leverancier_id, project_key, real_types)
 
-    return 0
+        return 0
 
-    # except Exception as err:
-    #     logger.error('*** ' + str(err))
+    except Exception as err:
+        logger.error('*** ' + str(err))
 
-    #     return 1
+        return 1
 
     # try..except
 
@@ -3925,7 +3829,6 @@ def dido_import(header: str):
             keyword = 'DELIVERIES',
         )
 
-        # Process all projects
         for project_key in projects.keys():
             dc.subheader(f'Project: {project_key}', '-')
 
@@ -3938,8 +3841,7 @@ def dido_import(header: str):
                 key = 'DELIVERIES_TO_PROCESS',
                 default = '*',
             )
-            if deliveries_to_process == '*' or \
-                deliveries_to_process == ['*']:
+            if deliveries_to_process == '*':
                 deliveries_to_process = cargo_dict.keys()
 
             # process all deliveries
