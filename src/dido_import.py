@@ -1847,7 +1847,7 @@ def generate_statistics(data: pd.DataFrame,
         md += 'Table contains no deliveries  \n'
 
     logger.info('')
-    logger.info('[Generating statistics]')
+    logger.info('[Generating statistics, this may take quite some time]')
 
     md += '\n\n**Statistics**\n\n'
 
@@ -1984,7 +1984,6 @@ def create_markdown(data: pd.DataFrame,
 
     # check if statistics should be generated
     statistics = dc.get_par_par(supplier_config, 'delivery', 'STATISTICS', {})
-    print(statistics)
 
     if len(statistics) > 0 and supplier_id in statistics.keys():
         # True, so add statistics to the markdown
